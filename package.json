@@ -1,0 +1,17 @@
+{
+  "name": "hoang-nhat-scm",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "tsx --test src/__tests__/auth.test.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.15.3",
+    "tsx": "^4.20.3"
+  }
+}

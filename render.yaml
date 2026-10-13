@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: hoang-nhat-scm
+    runtime: python
+    plan: starter
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: hoang-nhat-scm-db
+          property: connectionString
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SETUP_TOKEN
+        generateValue: true
+databases:
+  - name: hoang-nhat-scm-db
+    databaseName: hoang_nhat_scm
+    user: hoang_nhat_scm
+    plan: basic-256mb
+    region: singapore
+    ipAllowList: []
