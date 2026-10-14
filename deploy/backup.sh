@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hourly SQLite backup -> S3. Run by deploy/systemd/hoang-nhat-backup.timer.
-# Needs: docker, AWS CLI v2, and the EC2 instance role from deploy/aws/
+# Needs: docker, AWS CLI v2, and an EC2 instance role allowed to upload to the bucket
 # (no AWS keys on disk, in the repo or in the image).
 set -euo pipefail
 

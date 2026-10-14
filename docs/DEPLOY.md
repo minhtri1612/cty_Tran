@@ -55,7 +55,7 @@ Security group:
 | Vào | 22/tcp | **không mở** | Dùng Session Manager |
 | Ra | tất cả | 0.0.0.0/0 | cập nhật gói, S3, Let's Encrypt |
 
-- Instance role gồm: `AmazonSSMManagedInstanceCore` + chính sách `deploy/aws/instance-role-policy.json` (thay `REPLACE_BUCKET`). Role không có quyền xóa backup.
+- Instance role gồm: `AmazonSSMManagedInstanceCore` + quyền `s3:PutObject` vào `hourly/*`, `daily/*` và `s3:GetObject`/`s3:ListBucket` trên bucket backup. Role không có quyền xóa backup.
 - Truy cập: `aws ssm start-session --target <instance-id>`. Nếu bắt buộc phải mở SSH tạm thời, chỉ mở cho IP cố định của người quản trị, có thời hạn và cần được duyệt.
 
 ## 5. Tên miền và HTTPS
@@ -116,14 +116,12 @@ aws s3api create-bucket --bucket $BUCKET --region ap-southeast-1 --create-bucket
 aws s3api put-public-access-block --bucket $BUCKET --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 aws s3api put-bucket-versioning --bucket $BUCKET --versioning-configuration Status=Enabled
 aws s3api put-bucket-encryption --bucket $BUCKET --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-sed "s/REPLACE_BUCKET/$BUCKET/g" deploy/aws/bucket-policy.json > /tmp/bp.json && aws s3api put-bucket-policy --bucket $BUCKET --policy file:///tmp/bp.json
-aws s3api put-bucket-lifecycle-configuration --bucket $BUCKET --lifecycle-configuration file://deploy/aws/bucket-lifecycle.json
 ```
 
 Chạy các lệnh này từ máy quản trị có quyền admin, không phải từ EC2 (instance role cố ý không có quyền này).
 
-- **Tần suất:** mỗi giờ (`hourly/`, giữ 14 ngày); một bản mỗi ngày lúc 02:00 giờ Việt Nam (`daily/`, giữ 365 ngày). Mất tối đa khoảng 1 giờ dữ liệu nếu mất máy.
-- **Mã hóa:** SSE-S3 (AES-256); bucket chặn truy cập công khai và từ chối kết nối không TLS.
+- **Tần suất:** mỗi giờ (`hourly/`); một bản mỗi ngày lúc 02:00 giờ Việt Nam (`daily/`). Thời gian giữ bản backup cấu hình bằng S3 lifecycle rule (gợi ý: `hourly/` 14 ngày, `daily/` 365 ngày). Mất tối đa khoảng 1 giờ dữ liệu nếu mất máy.
+- **Mã hóa:** SSE-S3 (AES-256); bucket chặn truy cập công khai.
 - **Phương pháp:** `VACUUM INTO` bên trong container đang chạy (snapshot nhất quán dù app đang ghi) → `PRAGMA integrity_check` → gzip → sha256 → upload từ host bằng instance role. Không có AWS key trong repo, image hay container.
 
 Cài timer:
