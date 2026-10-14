@@ -1,27 +1,56 @@
+# Production stack: app + Caddy (HTTPS). SQLite lives in $SCM_DATA_DIR on the
+# host (an EBS-backed directory on EC2), never inside the container.
+# Configuration: /srv/hoang-nhat/.env next to this file (see .env.example and
+# docs/DEPLOY.md). Never run `docker compose down -v` casually: it deletes the
+# Caddy certificate volumes (the database itself is a host directory).
 services:
-  mysql:
-    image: mysql:8
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: hoang_nhat
-      MYSQL_USER: scm
-      MYSQL_PASSWORD: scm
-    ports:
-      - "3306:3306"
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uscm", "-pscm"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
   app:
     build: .
-    ports:
-      - "4173:4173"
+    image: hoang-nhat-scm:${SCM_IMAGE_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    env_file:
+      - path: ${SCM_APP_ENV:-./app.env}
+        required: false
     environment:
-      DATABASE_URL: mysql://scm:scm@mysql:3306/hoang_nhat
-      PORT: "4173"
+      NODE_ENV: production
+      SCM_DB_PATH: /data/hoang-nhat.sqlite3
+      TRUST_PROXY: "1"
+    volumes:
+      - ${SCM_DATA_DIR:-./data}:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    expose:
+      - "4173"
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
     depends_on:
-      mysql:
+      app:
         condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    environment:
+      SCM_DOMAIN: ${SCM_DOMAIN:?Set SCM_DOMAIN (e.g. kho.example.com, or localhost for local testing)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+volumes:
+  caddy_data:
+  caddy_config:

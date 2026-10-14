@@ -26,10 +26,12 @@ export const prisma = new PrismaClient({
 // Refuses to run against a missing or partially migrated database instead of
 // letting the app create an empty file. Schema changes only happen through
 // `npm run db:migrate`, never on startup.
+const migrateHint = ' Khởi tạo/cập nhật schema: "npm run db:migrate" (Docker: docker compose run --rm app node scripts/prisma.mjs migrate deploy).';
+
 export async function checkDatabase() {
   const path = databasePath();
   if (!existsSync(path)) {
-    throw new Error(`Không tìm thấy database SQLite tại ${path}. Chạy "npm run db:migrate" để khởi tạo.`);
+    throw new Error(`Không tìm thấy database SQLite tại ${path}.${migrateHint}`);
   }
   const expected = readdirSync(resolve(root, "prisma/migrations"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -40,11 +42,11 @@ export async function checkDatabase() {
       "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL",
     );
   } catch {
-    throw new Error(`Database ${path} chưa được khởi tạo bằng Prisma migrate. Chạy "npm run db:migrate".`);
+    throw new Error(`Database ${path} chưa được khởi tạo bằng Prisma migrate.${migrateHint}`);
   }
   const applied = new Set(rows.map((row) => row.migration_name));
   const pending = expected.filter((name) => !applied.has(name));
-  if (pending.length) throw new Error(`Database còn migration chưa áp dụng: ${pending.join(", ")}. Sao lưu rồi chạy "npm run db:migrate".`);
+  if (pending.length) throw new Error(`Database còn migration chưa áp dụng: ${pending.join(", ")}. Sao lưu trước.${migrateHint}`);
   await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL");
   const [{ foreign_keys: foreignKeys }] = await prisma.$queryRawUnsafe<{ foreign_keys: bigint | number }[]>("PRAGMA foreign_keys");
   if (Number(foreignKeys) !== 1) throw new Error("SQLite foreign_keys đang tắt");
