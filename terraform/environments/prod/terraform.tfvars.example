@@ -1,0 +1,12 @@
+# Copy thành terraform.tfvars (không commit). Không đặt secret ở đây.
+aws_region          = "ap-southeast-1"
+instance_type       = "t4g.small"
+domain_name         = "kho.example.com"
+route53_zone_id     = null
+vpc_cidr            = "10.20.0.0/16"
+public_subnet_cidr  = "10.20.1.0/24"
+ecr_repository_name = "hoang-nhat-scm-prod"
+backup_bucket_name  = "hoang-nhat-scm-backup-prod-123456789012"
+
+termination_protection = true
+enable_ebs_snapshots   = true

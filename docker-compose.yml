@@ -6,7 +6,8 @@
 services:
   app:
     build: .
-    image: hoang-nhat-scm:${SCM_IMAGE_TAG:-latest}
+    # EC2 + ECR: SCM_IMAGE=<account>.dkr.ecr.<region>.amazonaws.com/<repo>, SCM_IMAGE_TAG=<git commit>
+    image: ${SCM_IMAGE:-hoang-nhat-scm}:${SCM_IMAGE_TAG:-latest}
     init: true
     restart: unless-stopped
     env_file:
