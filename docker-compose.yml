@@ -10,9 +10,6 @@ services:
     image: ${SCM_IMAGE:-hoang-nhat-scm}:${SCM_IMAGE_TAG:-latest}
     init: true
     restart: unless-stopped
-    env_file:
-      - path: ${SCM_APP_ENV:-./app.env}
-        required: false
     environment:
       NODE_ENV: production
       SCM_DB_PATH: /data/hoang-nhat.sqlite3

@@ -53,7 +53,7 @@ npm run db:migrate        # tạo/cập nhật schema SQLite (mặc định data
 npm run dev               # chạy trực tiếp TypeScript tại http://127.0.0.1:4173
 ```
 
-Lần đầu mở trang sẽ hiện màn hình tạo tài khoản quản trị (mật khẩu ≥ 12 ký tự). Ở local không cần mã thiết lập trừ khi đặt `SETUP_TOKEN`.
+Lần đầu mở trang sẽ hiện màn hình tạo tài khoản quản trị (mật khẩu ≥ 12 ký tự).
 
 Bản build:
 
@@ -83,22 +83,21 @@ npm test                  # toàn bộ test (khoảng 1–2 phút)
 npm run typecheck         # kiểm tra kiểu TypeScript
 ```
 
-Mỗi file test tạo một database SQLite tạm trong thư mục tạm của hệ điều hành; khi chạy dưới `node --test`, `src/config/database.ts` từ chối mọi database nằm ngoài thư mục tạm. Test bao phủ: khởi tạo/migration, đăng nhập, phiên, phân quyền, mã thiết lập, lưu đồng thời và `409`, rollback, toàn vẹn tồn kho–sổ kho, nhập CSV, NCC/khách hàng, đơn hàng và định mức, kiểm kê, ảnh, báo cáo Excel, payload sai/quá lớn, XSS (render giao diện thật với dữ liệu độc hại), tắt máy, backup/restore. Phần giao diện được test bằng cách nạp các file `static/js` thật vào Node `vm` với DOM giả; không có test trình duyệt thật (click/form).
+Mỗi file test tạo một database SQLite tạm trong thư mục tạm của hệ điều hành; khi chạy dưới `node --test`, `src/config/database.ts` từ chối mọi database nằm ngoài thư mục tạm. Test bao phủ: khởi tạo/migration, đăng nhập, phiên, phân quyền, tạo admin đầu tiên, lưu đồng thời và `409`, rollback, toàn vẹn tồn kho–sổ kho, nhập CSV, NCC/khách hàng, đơn hàng và định mức, kiểm kê, ảnh, báo cáo Excel, payload sai/quá lớn, XSS (render giao diện thật với dữ liệu độc hại), tắt máy, backup/restore. Phần giao diện được test bằng cách nạp các file `static/js` thật vào Node `vm` với DOM giả; không có test trình duyệt thật (click/form).
 
 ## Biến môi trường
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
 | `SCM_DB_PATH` | `data/hoang-nhat.sqlite3` | File SQLite (Docker: `/data/hoang-nhat.sqlite3`) |
-| `NODE_ENV` | — | `production`: cookie `Secure`, bắt buộc `SETUP_TOKEN` |
-| `SETUP_TOKEN` | — | Mã để tạo quản trị viên đầu tiên (production: ≥ 16 ký tự) |
+| `NODE_ENV` | — | `production`: cookie `Secure` |
 | `COOKIE_SECURE` | theo `NODE_ENV` | Ghi đè cờ `Secure` của cookie (`true`/`false`) |
 | `TRUST_PROXY` | `0` | Số proxy phía trước (Docker + Caddy: `1`) để lấy IP thật khi chặn đăng nhập sai |
 | `SCM_PORT` / `PORT` | `4173` | Cổng HTTP |
 | `SCM_HOST` | `127.0.0.1` | Địa chỉ nghe (Docker: `0.0.0.0`) |
 | `SCM_BODY_LIMIT` | `16mb` | Giới hạn request; giữ khớp với `request_body` trong `deploy/Caddyfile` |
 
-Docker Compose còn đọc `SCM_DOMAIN`, `SCM_DATA_DIR`, `SCM_APP_ENV`, `SCM_IMAGE_TAG`, `HTTP_PORT`, `HTTPS_PORT` (xem `.env.example`).
+Docker Compose còn đọc `SCM_DOMAIN`, `SCM_DATA_DIR`, `SCM_IMAGE`, `SCM_IMAGE_TAG`, `HTTP_PORT`, `HTTPS_PORT` (xem `.env.example`).
 
 ## Đăng nhập và phân quyền
 
@@ -110,8 +109,7 @@ Docker Compose còn đọc `SCM_DOMAIN`, `SCM_DATA_DIR`, `SCM_APP_ENV`, `SCM_IMA
 ## Docker Compose
 
 ```bash
-cp deploy/app.env.example app.env        # điền SETUP_TOKEN; chmod 600 app.env
-# .env cho compose: SCM_DOMAIN=..., SCM_DATA_DIR=... (xem .env.example)
+# .env cho compose (tùy chọn): SCM_DOMAIN=..., SCM_DATA_DIR=... (xem .env.example)
 docker compose build
 docker compose run --rm app node scripts/prisma.mjs migrate deploy   # lần đầu và sau mỗi bản cập nhật có migration
 docker compose up -d
@@ -120,7 +118,8 @@ docker compose ps                        # app phải ở trạng thái healthy
 
 - Không có container database; SQLite nằm trong thư mục host `SCM_DATA_DIR` (chủ sở hữu uid 1000).
 - Cổng app (4173) không mở ra ngoài; chỉ Caddy mở 80/443.
-- Thử local: `SCM_DOMAIN=localhost HTTP_PORT=8080 HTTPS_PORT=8443` (Caddy dùng chứng chỉ nội bộ, trình duyệt sẽ cảnh báo).
+- Thử local: không cần tên miền — bỏ trống `SCM_DOMAIN` thì dùng `localhost` (Caddy tự ký chứng chỉ, trình duyệt sẽ cảnh báo).
+- **Không có mã thiết lập:** người đầu tiên mở trang khi database còn trống sẽ tạo được quản trị viên. Trên máy public, tạo admin ngay sau khi deploy.
 - **Không chạy** `docker compose down -v` trên máy production (xóa volume chứng chỉ của Caddy).
 
 ## Production, backup và khôi phục
@@ -146,7 +145,6 @@ Không bao giờ sao chép trực tiếp file `.sqlite3` khi ứng dụng đang 
 | Lưu bị báo “người khác vừa lưu” | Bình thường khi hai người lưu cùng lúc; dữ liệu đã tải lại, nhập lại thay đổi |
 | “Dữ liệu gửi lên quá lớn” | Tổng dữ liệu vượt 16 MB (thường do ảnh); xóa bớt ảnh hoặc tăng `SCM_BODY_LIMIT` và Caddy |
 | “Tồn kho mã … không khớp với tổng giao dịch” | Dữ liệu bị sửa ngoài ứng dụng; đối chiếu sổ kho rồi điều chỉnh bằng kiểm kê |
-| Không tạo được quản trị viên trên production | Đặt `SETUP_TOKEN` (≥ 16 ký tự) trong `app.env`, `docker compose up -d` lại |
 | Xem log | `docker compose logs -f app` / `docker compose logs -f caddy` |
 
 ## Giới hạn hiện tại và hướng mở rộng

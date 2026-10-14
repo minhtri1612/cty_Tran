@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { cookieName, sessionSeconds } from "../config/constant.js";
-import { checkPassword, clearFailedLogins, createFirstAdmin, currentUser, endSession, findUser, noteFailedLogin, roleOf, sameSecret, startSession, tooManyLogins, updatePassword, userExists } from "../services/auth.service.js";
+import { checkPassword, clearFailedLogins, createFirstAdmin, currentUser, endSession, findUser, noteFailedLogin, roleOf, startSession, tooManyLogins, updatePassword, userExists } from "../services/auth.service.js";
 
 const production = process.env.NODE_ENV === "production";
 
@@ -9,10 +9,6 @@ const production = process.env.NODE_ENV === "production";
 function secureCookies() {
   if (process.env.COOKIE_SECURE) return process.env.COOKIE_SECURE === "true";
   return production;
-}
-
-function setupToken() {
-  return process.env.SETUP_TOKEN || "";
 }
 
 function setSession(response: Response, token: string) {
@@ -32,19 +28,11 @@ export async function status(request: Request, response: Response) {
     authenticated: Boolean(username),
     username,
     role: username ? await roleOf(username) : null,
-    setup_requires_token: Boolean(setupToken()) || production,
   });
 }
 
 export async function setup(request: Request, response: Response) {
   if (await userExists()) return response.status(409).json({ error: "Tài khoản quản trị đã được thiết lập" });
-  const token = setupToken();
-  if (production && token.length < 16) {
-    return response.status(503).json({ error: "Máy chủ chưa cấu hình SETUP_TOKEN (tối thiểu 16 ký tự) nên chưa thể tạo quản trị viên" });
-  }
-  if (token && !sameSecret(Buffer.from(String(request.body?.setup_token || "")), Buffer.from(token))) {
-    return response.status(403).json({ error: "Mã thiết lập không đúng" });
-  }
   const username = String(request.body?.username || "").trim().toLowerCase();
   const password = String(request.body?.password || "");
   if (!/^[a-z0-9._-]{3,60}$/.test(username) || password.length < 12 || password.length > 200) {

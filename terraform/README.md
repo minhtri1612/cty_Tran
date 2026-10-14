@@ -38,7 +38,7 @@ aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS
 docker buildx build --platform linux/$(terraform output -raw architecture) -t "$REPO:$TAG" --push .
 
 # Trên EC2 (aws ssm start-session --target <instance_id>): xem docs/DEPLOY.md
-#   - đặt image ECR + tag trong /srv/hoang-nhat/app/.env, SETUP_TOKEN trong /srv/hoang-nhat/app.env
+#   - đặt image ECR + tag (SCM_IMAGE, SCM_IMAGE_TAG) trong /srv/hoang-nhat/app/.env
 #   - docker compose pull
 #   - docker compose run --rm app node scripts/prisma.mjs migrate deploy
 #   - docker compose up -d
@@ -47,7 +47,7 @@ docker buildx build --platform linux/$(terraform output -raw architecture) -t "$
 
 ## Nguyên tắc an toàn
 
-- Không secret trong Terraform: `SETUP_TOKEN` chỉ nằm trong `/srv/hoang-nhat/app.env` trên máy.
+- Không secret trong Terraform. Sau khi deploy, tạo tài khoản admin ngay (không có mã thiết lập).
 - Bucket state, bucket backup, ECR repository và ổ EBS dữ liệu có `prevent_destroy`; bucket/repository có `force_destroy = false`; ổ dữ liệu tạo snapshot cuối khi bị xóa.
 - EC2 bỏ qua thay đổi `ami`/`user_data` để `apply` không tự thay máy; prod bật termination protection.
 - IMDSv2 bắt buộc, hop limit 1: container không lấy được credential của EC2.

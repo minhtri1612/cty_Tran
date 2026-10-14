@@ -100,7 +100,7 @@ test("health check queries the database", async () => {
 });
 
 test("SIGTERM shuts the server down cleanly", async () => {
-  const server = await productionServer({ SETUP_TOKEN: "s3tup-token-for-tests-0123456789" });
+  const server = await productionServer({});
   assert.equal((await server.get("/api/health")).status, 200);
   const exited = server.exited();
   server.child.kill("SIGTERM");

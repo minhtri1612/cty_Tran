@@ -21,7 +21,6 @@ Bố trí thư mục trên máy:
 |---|---|---|
 | `/srv/hoang-nhat/app` | mã nguồn (git checkout) + `.env` cho compose | root |
 | `/srv/hoang-nhat/data` | ổ EBS riêng: `hoang-nhat.sqlite3`, `backups/` | `1000:1000`, `750` |
-| `/srv/hoang-nhat/app.env` | `SETUP_TOKEN` | root, `600` |
 | `/srv/hoang-nhat/backup.env` | tên bucket S3 cho timer backup | root, `600` |
 
 ## 2. Chọn máy
@@ -87,13 +86,8 @@ sudo git checkout <tag-hoặc-commit-đã-duyệt>
 sudo tee .env >/dev/null <<'EOF'
 SCM_DOMAIN=kho.example.com
 SCM_DATA_DIR=/srv/hoang-nhat/data
-SCM_APP_ENV=/srv/hoang-nhat/app.env
 SCM_IMAGE_TAG=<commit>
 EOF
-
-# Secret: mã thiết lập quản trị viên đầu tiên
-sudo install -m 600 /dev/null /srv/hoang-nhat/app.env
-echo "SETUP_TOKEN=$(openssl rand -base64 24)" | sudo tee /srv/hoang-nhat/app.env >/dev/null
 
 sudo docker compose build
 sudo docker compose run --rm app node scripts/prisma.mjs migrate deploy   # tạo schema SQLite
@@ -102,7 +96,7 @@ sudo docker compose ps        # app: healthy; caddy: running
 curl -fsS https://kho.example.com/api/health
 ```
 
-**Tạo quản trị viên đầu tiên:** mở `https://kho.example.com`, nhập tên đăng nhập, mật khẩu (≥ 12 ký tự) và mã trong `/srv/hoang-nhat/app.env` (`sudo cat`). Sau khi đã có quản trị viên, API thiết lập luôn trả lỗi `409`; có thể xóa dòng `SETUP_TOKEN` rồi chạy lại `docker compose up -d`. Tạo tài khoản riêng cho từng nhân viên trong *Cài đặt*.
+**Tạo quản trị viên đầu tiên — làm NGAY sau `up -d`:** mở `https://kho.example.com`, nhập tên đăng nhập và mật khẩu (≥ 12 ký tự). Không có mã thiết lập: khi database còn trống, ai mở trang trước sẽ tạo được admin, vì vậy không để trang ở trạng thái chưa có admin. Tạo tài khoản riêng cho từng nhân viên trong *Cài đặt*.
 
 Máy chủ không tự tạo hay sửa schema khi khởi động; nếu thiếu migration, container `app` dừng với thông báo hướng dẫn.
 

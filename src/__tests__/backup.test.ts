@@ -79,7 +79,7 @@ test("a restored backup opens in the app with the backed-up data", async () => {
   backup("extract", archive, restored);
   assert.ok(existsSync(restored));
   assert.equal(readdirSync(outDir).filter((name) => name.startsWith(".tmp-")).length, 0);
-  const server = await productionServer({ SCM_DB_PATH: restored, SETUP_TOKEN: "s3tup-token-for-tests-0123456789" });
+  const server = await productionServer({ SCM_DB_PATH: restored });
   try {
     const login = await server.post("/api/auth/login", { username: "owner", password: "correct-horse-battery" });
     assert.equal(login.status, 200);

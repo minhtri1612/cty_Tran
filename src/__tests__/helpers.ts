@@ -13,7 +13,6 @@ export function useTempDatabase() {
   const dir = mkdtempSync(join(tmpdir(), "hn-scm-test-"));
   const path = join(dir, "test.sqlite3");
   process.env.SCM_DB_PATH = path;
-  delete process.env.SETUP_TOKEN;
   migrate(path);
   return path;
 }
@@ -55,7 +54,7 @@ export async function productionServer(env: Record<string, string>) {
   migrate(path);
   const port = 20000 + Math.floor(Math.random() * 20000);
   const child = spawn(process.execPath, ["--import", "tsx", resolve(root, "src/server.ts")], {
-    env: { ...process.env, NODE_ENV: "production", SCM_DB_PATH: path, SCM_PORT: String(port), PORT: "", SCM_HOST: "127.0.0.1", SETUP_TOKEN: "", ...env },
+    env: { ...process.env, NODE_ENV: "production", SCM_DB_PATH: path, SCM_PORT: String(port), PORT: "", SCM_HOST: "127.0.0.1", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";

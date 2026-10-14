@@ -7,27 +7,17 @@ const { call, close } = await startServer();
 const { prisma } = await import("../config/database.js");
 after(close);
 
-test("production refuses initial setup without a configured setup token", async () => {
+test("production setup sets a Secure, HttpOnly, SameSite=Strict cookie", async () => {
   const server = await productionServer({});
   try {
     const response = await server.post("/api/auth/setup", { username: "owner", password: "correct-horse-battery" });
-    assert.equal(response.status, 503);
-  } finally {
-    server.stop();
-  }
-});
-
-test("production setup requires the right token and sets a Secure, HttpOnly, SameSite=Strict cookie", async () => {
-  const server = await productionServer({ SETUP_TOKEN: "s3tup-token-for-tests-0123456789" });
-  try {
-    const wrong = await server.post("/api/auth/setup", { username: "owner", password: "correct-horse-battery", setup_token: "nope" });
-    assert.equal(wrong.status, 403);
-    const right = await server.post("/api/auth/setup", { username: "owner", password: "correct-horse-battery", setup_token: "s3tup-token-for-tests-0123456789" });
-    assert.equal(right.status, 200);
-    const cookie = right.headers.get("set-cookie") || "";
+    assert.equal(response.status, 200);
+    const cookie = response.headers.get("set-cookie") || "";
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /Secure/);
     assert.match(cookie, /SameSite=Strict/);
+    const again = await server.post("/api/auth/setup", { username: "second", password: "correct-horse-battery" });
+    assert.equal(again.status, 409);
   } finally {
     server.stop();
   }

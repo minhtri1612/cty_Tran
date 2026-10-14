@@ -38,7 +38,6 @@ let data = {
 let currentUser = "";
 let currentRole = "warehouse";
 let stateVersion = 0;
-let setupRequiresToken = false;
 let saving = Promise.resolve();
 let page = "dashboard";
 let materialFilter = "Tất cả";
@@ -97,10 +96,9 @@ async function startApp() {
   try {
     const r = await fetch("/api/auth/status", { cache: "no-store" });
     const s = await r.json();
-    setupRequiresToken = s.setup_requires_token;
     if (s.authenticated) {
       await enterApp(s.username);
-    } else renderAuth(s.configured, "", setupRequiresToken);
+    } else renderAuth(s.configured);
   } catch (e) {
     console.error(e);
     document.getElementById("shell").style.display = "none";
@@ -108,10 +106,10 @@ async function startApp() {
       `<div class="auth-screen"><div class="auth-card"><h1>Không kết nối được backend</h1><p>${esc(e.message || "Hãy kiểm tra máy chủ rồi tải lại trang.")}</p></div></div>`;
   }
 }
-function renderAuth(configured, error = "", requiresToken = false) {
+function renderAuth(configured, error = "") {
   document.getElementById("shell").style.display = "none";
   document.getElementById("authRoot").innerHTML =
-    `<div class="auth-screen"><section class="auth-card"><div class="auth-brand"><div class="logo">H</div><div><b>HOÀNG NHẬT SCM</b><small>HỆ THỐNG QUẢN LÝ KHO &amp; CHUỖI CUNG ỨNG</small></div></div><h1>${configured ? "Đăng nhập hệ thống" : "Thiết lập quản trị viên"}</h1><p>${configured ? "Đăng nhập để quản lý kho, phiếu nhập xuất và đơn hàng." : "Tạo tài khoản quản trị đầu tiên. Mật khẩu được băm và lưu trong database của hệ thống."}</p><form onsubmit="submitAuth(event,${configured})"><div class="form-field"><label>Tên đăng nhập</label><input id="authUsername" required minlength="3" maxlength="60" autocomplete="username" placeholder="Tên đăng nhập"></div><div class="form-field"><label>Mật khẩu</label><input id="authPassword" type="password" required minlength="${configured ? "1" : "12"}" autocomplete="${configured ? "current-password" : "new-password"}" placeholder="${configured ? "Nhập mật khẩu" : "Ít nhất 12 ký tự"}"></div>${!configured && requiresToken ? `<div class="form-field"><label>Mã thiết lập do quản trị hệ thống cung cấp</label><input id="setupToken" required autocomplete="off" placeholder="Mã thiết lập"></div>` : ""}${configured ? "" : `<div class="form-field"><label>Nhập lại mật khẩu</label><input id="authConfirm" type="password" required minlength="12" autocomplete="new-password" placeholder="Nhập lại mật khẩu"></div>`}<div id="authError" class="auth-error" style="${error ? "display:block" : ""}">${esc(error)}</div><button class="btn primary" type="submit" style="width:100%;margin-top:10px">${configured ? "Đăng nhập" : "Tạo tài khoản quản trị"}</button></form><div class="auth-help">Phiên làm việc hết hạn sau 12 giờ · Dữ liệu lưu trong database của hệ thống</div></section></div>`;
+    `<div class="auth-screen"><section class="auth-card"><div class="auth-brand"><div class="logo">H</div><div><b>HOÀNG NHẬT SCM</b><small>HỆ THỐNG QUẢN LÝ KHO &amp; CHUỖI CUNG ỨNG</small></div></div><h1>${configured ? "Đăng nhập hệ thống" : "Thiết lập quản trị viên"}</h1><p>${configured ? "Đăng nhập để quản lý kho, phiếu nhập xuất và đơn hàng." : "Tạo tài khoản quản trị đầu tiên. Mật khẩu được băm và lưu trong database của hệ thống."}</p><form onsubmit="submitAuth(event,${configured})"><div class="form-field"><label>Tên đăng nhập</label><input id="authUsername" required minlength="3" maxlength="60" autocomplete="username" placeholder="Tên đăng nhập"></div><div class="form-field"><label>Mật khẩu</label><input id="authPassword" type="password" required minlength="${configured ? "1" : "12"}" autocomplete="${configured ? "current-password" : "new-password"}" placeholder="${configured ? "Nhập mật khẩu" : "Ít nhất 12 ký tự"}"></div>${configured ? "" : `<div class="form-field"><label>Nhập lại mật khẩu</label><input id="authConfirm" type="password" required minlength="12" autocomplete="new-password" placeholder="Nhập lại mật khẩu"></div>`}<div id="authError" class="auth-error" style="${error ? "display:block" : ""}">${esc(error)}</div><button class="btn primary" type="submit" style="width:100%;margin-top:10px">${configured ? "Đăng nhập" : "Tạo tài khoản quản trị"}</button></form><div class="auth-help">Phiên làm việc hết hạn sau 12 giờ · Dữ liệu lưu trong database của hệ thống</div></section></div>`;
 }
 async function submitAuth(event, configured) {
   event.preventDefault();
@@ -126,9 +124,6 @@ async function submitAuth(event, configured) {
       body: JSON.stringify({
         username,
         password,
-        ...(!configured && setupRequiresToken
-          ? { setup_token: document.getElementById("setupToken").value }
-          : {}),
       }),
     });
     const result = await r.json();
@@ -136,7 +131,6 @@ async function submitAuth(event, configured) {
       return renderAuth(
         configured,
         result.error || "Đăng nhập không thành công",
-        setupRequiresToken,
       );
     await enterApp(result.username);
   } catch (e) {
