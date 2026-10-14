@@ -43,7 +43,8 @@ services:
       - "${HTTPS_PORT:-443}:443"
       - "${HTTPS_PORT:-443}:443/udp"
     environment:
-      SCM_DOMAIN: ${SCM_DOMAIN:?Set SCM_DOMAIN (e.g. kho.example.com, or localhost for local testing)}
+      # Production: SCM_DOMAIN=kho.example.com. Unset = localhost (local test, self-signed cert).
+      SCM_DOMAIN: ${SCM_DOMAIN:-localhost}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
