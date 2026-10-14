@@ -1,7 +1,7 @@
 import "./temp-db.js";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { productionServer, startServer } from "./helpers.js";
+import { productionServer, startServer, pw } from "./helpers.js";
 
 const { call, close } = await startServer();
 const { prisma } = await import("../config/database.js");
@@ -10,13 +10,13 @@ after(close);
 test("production setup sets a Secure, HttpOnly, SameSite=Strict cookie", async () => {
   const server = await productionServer({});
   try {
-    const response = await server.post("/api/auth/setup", { username: "owner", password: "correct-horse-battery" });
+    const response = await server.post("/api/auth/setup", { username: "owner", password: pw("admin") });
     assert.equal(response.status, 200);
     const cookie = response.headers.get("set-cookie") || "";
     assert.match(cookie, /HttpOnly/);
     assert.match(cookie, /Secure/);
     assert.match(cookie, /SameSite=Strict/);
-    const again = await server.post("/api/auth/setup", { username: "second", password: "correct-horse-battery" });
+    const again = await server.post("/api/auth/setup", { username: "second", password: pw("admin") });
     assert.equal(again.status, 409);
   } finally {
     server.stop();
@@ -43,7 +43,7 @@ let admin = "";
 
 test("concurrent initial setups create exactly one admin", async () => {
   const results = await Promise.all(["a1", "a2", "a3"].map((username) =>
-    call("/api/auth/setup", { method: "POST", body: { username: `owner-${username}`, password: "correct-horse-battery" } })));
+    call("/api/auth/setup", { method: "POST", body: { username: `owner-${username}`, password: pw("admin") } })));
   assert.equal(results.filter((result) => result.status === 200).length, 1);
   assert.equal(await prisma.user.count(), 1);
   admin = results.find((result) => result.status === 200)!.cookie;
@@ -67,17 +67,17 @@ test("cross-site or malformed origins cannot change state", async () => {
 });
 
 test("warehouse users cannot use admin endpoints", async () => {
-  assert.equal((await call("/api/users", { method: "POST", cookie: admin, body: { username: "kho2", password: "warehouse-password-2", role: "warehouse" } })).status, 201);
-  const login = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: "warehouse-password-2" } });
+  assert.equal((await call("/api/users", { method: "POST", cookie: admin, body: { username: "kho2", password: pw("kho-2"), role: "warehouse" } })).status, 201);
+  const login = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: pw("kho-2") } });
   assert.equal((await call("/api/users", { cookie: login.cookie })).status, 403);
-  assert.equal((await call("/api/users", { method: "POST", cookie: login.cookie, body: { username: "kho3", password: "warehouse-password-3", role: "admin" } })).status, 403);
+  assert.equal((await call("/api/users", { method: "POST", cookie: login.cookie, body: { username: "kho3", password: pw("kho-3"), role: "admin" } })).status, 403);
   assert.equal((await call("/api/users/kho2", { method: "DELETE", cookie: login.cookie })).status, 403);
 });
 
 test("changing a password ends the user's other sessions", async () => {
-  const first = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: "warehouse-password-2" } });
-  const second = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: "warehouse-password-2" } });
-  const changed = await call("/api/auth/password", { method: "POST", cookie: first.cookie, body: { current_password: "warehouse-password-2", new_password: "warehouse-password-NEW" } });
+  const first = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: pw("kho-2") } });
+  const second = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: pw("kho-2") } });
+  const changed = await call("/api/auth/password", { method: "POST", cookie: first.cookie, body: { current_password: pw("kho-2"), new_password: pw("kho-new") } });
   assert.equal(changed.status, 200);
   assert.equal((await call("/api/state", { cookie: second.cookie })).status, 401);
   assert.equal((await call("/api/state", { cookie: first.cookie })).status, 401);
@@ -85,13 +85,13 @@ test("changing a password ends the user's other sessions", async () => {
 });
 
 test("deleting a user ends their sessions", async () => {
-  const login = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: "warehouse-password-NEW" } });
+  const login = await call("/api/auth/login", { method: "POST", body: { username: "kho2", password: pw("kho-new") } });
   assert.equal((await call("/api/users/kho2", { method: "DELETE", cookie: admin })).status, 200);
   assert.equal((await call("/api/state", { cookie: login.cookie })).status, 401);
 });
 
 test("logout invalidates the session server-side", async () => {
-  const login = await call("/api/auth/login", { method: "POST", body: { username: (await prisma.user.findFirst())!.username, password: "correct-horse-battery" } });
+  const login = await call("/api/auth/login", { method: "POST", body: { username: (await prisma.user.findFirst())!.username, password: pw("admin") } });
   assert.equal((await call("/api/auth/logout", { method: "POST", cookie: login.cookie, body: {} })).status, 200);
   assert.equal((await call("/api/state", { cookie: login.cookie })).status, 401);
 });

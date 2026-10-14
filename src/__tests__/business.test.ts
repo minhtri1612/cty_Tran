@@ -4,7 +4,7 @@ import { inflateRawSync } from "node:zlib";
 import { after, before, test } from "node:test";
 import { validateState } from "../services/state.service.js";
 import { loadFrontend } from "./frontend.js";
-import { startServer } from "./helpers.js";
+import { startServer, pw } from "./helpers.js";
 
 const { call, close } = await startServer();
 after(close);
@@ -21,9 +21,9 @@ async function put(cookie: string, data: any, version: number) {
 }
 
 before(async () => {
-  admin = (await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: "correct-horse-battery" } })).cookie;
-  assert.equal((await call("/api/users", { method: "POST", cookie: admin, body: { username: "kho", password: "warehouse-password", role: "warehouse" } })).status, 201);
-  warehouse = (await call("/api/auth/login", { method: "POST", body: { username: "kho", password: "warehouse-password" } })).cookie;
+  admin = (await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: pw("admin") } })).cookie;
+  assert.equal((await call("/api/users", { method: "POST", cookie: admin, body: { username: "kho", password: pw("kho"), role: "warehouse" } })).status, 201);
+  warehouse = (await call("/api/auth/login", { method: "POST", body: { username: "kho", password: pw("kho") } })).cookie;
   const { data, version } = await snapshot();
   Object.assign(data, {
     materials: [["V-1", "Vải kaki", "Vải", "Mét", 100, 10, 1500], ["N-1", "Nút áo", "Phụ liệu", "Cái", 50, 0, 200]],

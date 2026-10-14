@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readdirSync, writeFileSync, readFileSync } fro
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { productionServer, startServer } from "./helpers.js";
+import { productionServer, startServer, pw } from "./helpers.js";
 
 const { call, close } = await startServer();
 after(close);
@@ -30,7 +30,7 @@ let archive = "";
 let backedUpVersion = 0;
 
 test("a backup taken during concurrent saves is a consistent, committed state", async () => {
-  admin = (await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: "correct-horse-battery" } })).cookie;
+  admin = (await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: pw("admin") } })).cookie;
   let stop = false;
   const writer = (async () => {
     let saves = 0;
@@ -81,7 +81,7 @@ test("a restored backup opens in the app with the backed-up data", async () => {
   assert.equal(readdirSync(outDir).filter((name) => name.startsWith(".tmp-")).length, 0);
   const server = await productionServer({ SCM_DB_PATH: restored });
   try {
-    const login = await server.post("/api/auth/login", { username: "owner", password: "correct-horse-battery" });
+    const login = await server.post("/api/auth/login", { username: "owner", password: pw("admin") });
     assert.equal(login.status, 200);
   } finally {
     server.stop();

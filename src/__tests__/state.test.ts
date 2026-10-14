@@ -1,7 +1,7 @@
 import "./temp-db.js";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { startServer } from "./helpers.js";
+import { startServer, pw } from "./helpers.js";
 
 const { call, close } = await startServer();
 const { prisma } = await import("../config/database.js");
@@ -12,12 +12,12 @@ let admin = "";
 let warehouse = "";
 
 before(async () => {
-  const setup = await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: "correct-horse-battery" } });
+  const setup = await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: pw("admin") } });
   assert.equal(setup.status, 200);
   admin = setup.cookie;
-  const created = await call("/api/users", { method: "POST", cookie: admin, body: { username: "kho1", password: "warehouse-password-1", role: "warehouse" } });
+  const created = await call("/api/users", { method: "POST", cookie: admin, body: { username: "kho1", password: pw("kho-1"), role: "warehouse" } });
   assert.equal(created.status, 201);
-  const login = await call("/api/auth/login", { method: "POST", body: { username: "kho1", password: "warehouse-password-1" } });
+  const login = await call("/api/auth/login", { method: "POST", body: { username: "kho1", password: pw("kho-1") } });
   assert.equal(login.status, 200);
   warehouse = login.cookie;
 });

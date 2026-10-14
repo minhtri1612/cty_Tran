@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +7,14 @@ import { join, resolve } from "node:path";
 import type { Server } from "node:http";
 
 const root = resolve(import.meta.dirname, "../..");
+
+// Test passwords are generated per run (one per label), so the repository
+// contains no credential-like literals.
+const passwords = new Map<string, string>();
+export function pw(label: string) {
+  if (!passwords.has(label)) passwords.set(label, `${label}-${randomBytes(12).toString("hex")}`);
+  return passwords.get(label)!;
+}
 
 // Points this test process at a fresh, migrated SQLite file. Must run before
 // anything imports src/config/database.ts.

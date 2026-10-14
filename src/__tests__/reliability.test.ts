@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { validateState } from "../services/state.service.js";
 import { loadFrontend } from "./frontend.js";
-import { productionServer, startServer } from "./helpers.js";
+import { productionServer, startServer, pw } from "./helpers.js";
 
 const { call, close } = await startServer();
 after(close);
 
 let admin = "";
 before(async () => {
-  const setup = await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: "correct-horse-battery" } });
+  const setup = await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: pw("admin") } });
   assert.equal(setup.status, 200);
   admin = setup.cookie;
 });

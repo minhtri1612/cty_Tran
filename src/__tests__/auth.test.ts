@@ -1,13 +1,13 @@
 import "./temp-db.js";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { startServer } from "./helpers.js";
+import { startServer, pw } from "./helpers.js";
 
 const { call, close } = await startServer();
 after(close);
 
 test("setup then save a material", async () => {
-  const setup = await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: "correct-horse-battery" } });
+  const setup = await call("/api/auth/setup", { method: "POST", body: { username: "owner", password: pw("admin") } });
   assert.equal(setup.status, 200);
   const cookie = setup.cookie;
   const first = await call("/api/state", { cookie });
