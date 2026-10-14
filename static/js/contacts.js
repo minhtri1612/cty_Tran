@@ -201,6 +201,8 @@ function contactModal(kind, index = null) {
           data.orders.forEach((r) => {
             if (r[1] === old) r[1] = n;
           });
+          for (const profile of Object.values(data.material_profiles || {}))
+            if (profile.customer === old) profile.customer = n;
         }
         if (await persist()) {
           closeModal();
@@ -258,8 +260,13 @@ function contactModal(kind, index = null) {
       else if (old !== n) {
         arr[index] = n;
         data.receipts.forEach((r) => {
-          if (r[2] === old) r[2] = n;
+          r[2] = String(r[2] || "")
+            .split(", ")
+            .map((x) => (x === old ? n : x))
+            .join(", ");
         });
+        for (const profile of Object.values(data.material_profiles || {}))
+          if (profile.supplier === old) profile.supplier = n;
         for (const detail of Object.values(data.doc_details || {}))
           for (const line of detail.lines || [])
             if (line.supplier === old) line.supplier = n;
@@ -390,14 +397,22 @@ async function removeContact(kind, index) {
     return toast("Chỉ quản trị viên mới được sửa danh mục");
   const arr = kind === "suppliers" ? data.suppliers : data.customers;
   const n = arr[index];
+  const profiles = Object.values(data.material_profiles || {});
   const linked =
     kind === "suppliers"
-      ? data.receipts.some((r) => r[2] === n)
+      ? data.receipts.some((r) => String(r[2] || "").split(", ").includes(n)) ||
+        Object.values(data.doc_details || {}).some((d) =>
+          (d.lines || []).some((line) => line.supplier === n),
+        )
       : data.issues.some((r) => r[2] === n) ||
         data.orders.some((r) => r[1] === n);
   if (linked)
     return toast(
-      "Không thể xóa vì danh bạ này đã được dùng trong giao dịch/đơn hàng",
+      "Không thể xóa vì danh bạ này đã được dùng trong phiếu/đơn hàng. Có thể đổi tên thay vì xóa.",
+    );
+  if (profiles.some((p) => p[kind === "suppliers" ? "supplier" : "customer"] === n))
+    return toast(
+      "Không thể xóa vì đang được gán trên hồ sơ nguyên vật liệu. Hãy bỏ gán trên hồ sơ NVL trước.",
     );
   if (!confirm(`Xóa ${n} khỏi danh bạ?`)) return;
   arr.splice(index, 1);

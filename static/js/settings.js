@@ -158,7 +158,8 @@ async function importMaterialsCSV(input) {
   }
   const file = input.files?.[0];
   if (!file) return;
-  const original = structuredClone(data.materials);
+  const original = structuredClone(data.materials),
+    originalLedger = data.ledger.slice();
   try {
     const rows = parseCSV((await file.text()).replace(/^\uFEFF/, ""));
     if (rows.length < 2) throw Error("File CSV chưa có dòng dữ liệu");
@@ -192,8 +193,10 @@ async function importMaterialsCSV(input) {
       return Number(normalized);
     };
     const map = new Map(data.materials.map((m) => [m[0], m]));
+    const date = todayValue().split("-").reverse().join("/");
     let added = 0,
-      updated = 0;
+      updated = 0,
+      adjusted = 0;
     for (const r of imported) {
       const numbers = r.slice(4).map(parseNumber);
       if (numbers.some((n) => !Number.isFinite(n) || n < 0))
@@ -209,6 +212,11 @@ async function importMaterialsCSV(input) {
         numbers[2],
       ];
       if (old) {
+        const before = qty(old);
+        if (next[4] !== before) {
+          data.ledger.unshift([date, next[0], "Kiểm kê", next[4] - before, "Sửa hồ sơ"]);
+          adjusted++;
+        }
         old[1] = next[1];
         old[2] = next[2];
         old[3] = next[3];
@@ -219,15 +227,17 @@ async function importMaterialsCSV(input) {
       } else {
         data.materials.push(next);
         map.set(next[0], next);
+        if (next[4]) data.ledger.unshift([date, next[0], "Kiểm kê", next[4], "Tồn ban đầu"]);
         added++;
       }
     }
     if (
       !confirm(
-        `Nhập ${imported.length} mã NVL (${added} mã mới, ${updated} cập nhật). Tồn hiện tại của mã trùng sẽ được thay bằng số trong file. Tiếp tục?`,
+        `Nhập ${imported.length} mã NVL (${added} mã mới, ${updated} cập nhật). Tồn hiện tại của mã trùng sẽ được thay bằng số trong file; ${adjusted} mã thay đổi tồn sẽ được ghi điều chỉnh vào sổ kho. Tiếp tục?`,
       )
     ) {
       data.materials = original;
+      data.ledger = originalLedger;
       return;
     }
     if (await persist()) {
@@ -236,6 +246,7 @@ async function importMaterialsCSV(input) {
     }
   } catch (e) {
     data.materials = original;
+    data.ledger = originalLedger;
     toast(e.message);
   } finally {
     input.value = "";

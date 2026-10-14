@@ -13,6 +13,7 @@ test("setup then save a material", async () => {
   const first = await call("/api/state", { cookie });
   assert.equal(first.json.version, 0);
   first.json.data.materials = [["TEST-1", "Vải kaki", "Vải", "Mét", 10, 2, 1500]];
+  first.json.data.ledger = [["14/10/2026", "TEST-1", "Kiểm kê", 10, "Tồn ban đầu"]];
   const saved = await call("/api/state", { method: "PUT", cookie, body: { data: first.json.data, version: 0 } });
   assert.equal(saved.status, 200);
   const again = await call("/api/state", { cookie });

@@ -227,7 +227,61 @@ export function validateState(data) {
   if (data.ledger.some((row) => row.slice(0, 3).some((value) => typeof value !== "string") || !["Nhập", "Xuất", "Kiểm kê"].includes(row[2]) || !isNum(row[3]) || typeof row[4] !== "string")) {
     return "Dòng sổ kho có dữ liệu không hợp lệ";
   }
-  return orderAllowanceError(data);
+  return rowError(data) || stockLedgerError(data) || orderAllowanceError(data);
+}
+
+const idPattern = /^[A-Za-z0-9._/-]{1,120}$/;
+
+function text(value, max, required = true) {
+  return typeof value === "string" && value.length <= max && (!required || value.trim().length > 0);
+}
+
+function duplicate(values) {
+  return new Set(values).size !== values.length;
+}
+
+// Field types and lengths for every table row, so bad input is a 400 here
+// instead of a database error (or a silently truncated value) later.
+function rowError(data) {
+  if (data.materials.some((row) => !text(row[1], 200) || !text(row[2], 80) || !text(row[3], 40))) {
+    return "Tên NVL tối đa 200 ký tự, nhóm tối đa 80, đơn vị tính tối đa 40";
+  }
+  if (duplicate(data.suppliers) || duplicate(data.customers)) return "Danh bạ có tên bị trùng";
+  const receiptIds = data.receipts.map((row) => row[0]);
+  const issueIds = data.issues.map((row) => row[0]);
+  const orderIds = data.orders.map((row) => row[0]);
+  if ([...receiptIds, ...issueIds, ...orderIds].some((id) => typeof id !== "string" || !idPattern.test(id))) {
+    return "Mã phiếu/đơn hàng chỉ gồm chữ, số, dấu . _ / - (tối đa 120 ký tự)";
+  }
+  if (duplicate([...receiptIds, ...issueIds]) || duplicate(orderIds)) return "Mã phiếu hoặc mã đơn hàng bị trùng";
+  if (data.receipts.some((row) => !text(row[1], 20) || !text(row[2], 2000, false) || !Number.isInteger(row[3]) || row[3] < 0 || !isNum(row[4]) || row[4] < 0)) {
+    return "Thông tin phiếu nhập không hợp lệ";
+  }
+  const orderIdSet = new Set(orderIds);
+  if (data.issues.some((row) => !text(row[1], 20) || !text(row[2], 160, false) || typeof row[3] !== "string" || (row[3] !== "—" && !orderIdSet.has(row[3])) || !text(row[4], 80, false) || !Number.isInteger(row[5]) || row[5] < 0)) {
+    return "Thông tin phiếu xuất không hợp lệ hoặc tham chiếu đơn hàng không tồn tại";
+  }
+  if (data.orders.some((row) => !text(row[1], 160, false) || !text(row[2], 20, false) || !text(row[3], 300, false) || !text(row[4], 80, false) || !text(row[5], 20, false) || !text(row[6], 40))) {
+    return "Thông tin đơn hàng không hợp lệ";
+  }
+  if (data.ledger.some((row) => !text(row[0], 20) || !text(row[1], 80) || !text(row[4], 120))) return "Dòng sổ kho có dữ liệu không hợp lệ";
+  return null;
+}
+
+// Every stock change in the UI writes ledger rows (receipts, issues, counts,
+// "Tồn ban đầu" and "Sửa hồ sơ" adjustments), so each material's stock must
+// equal the sum of its ledger movements, and every movement must belong to an
+// existing material.
+function stockLedgerError(data) {
+  const sums = new Map();
+  for (const row of data.ledger) addCount(sums, row[1], row[3]);
+  const codes = new Set(data.materials.map((row) => row[0]));
+  const orphan = [...sums.keys()].find((code) => !codes.has(code));
+  if (orphan) return `Sổ kho có giao dịch của mã NVL không tồn tại: ${orphan}`;
+  for (const row of data.materials) {
+    if (!close(row[4], sums.get(row[0]) || 0)) return `Tồn kho mã ${row[0]} không khớp với tổng giao dịch trên sổ kho`;
+  }
+  return null;
 }
 
 function orderAllowanceError(data) {
