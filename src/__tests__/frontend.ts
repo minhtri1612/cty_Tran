@@ -35,7 +35,7 @@ export function loadFrontend() {
     toast = (message) => __toasts.push(message);
     render = () => {}; renderNav = () => {}; go = () => {}; closeModal = () => {};
     persist = async () => true;
-    openModal = (title, body, onSave) => { globalThis.__save = onSave; };
+    openModal = (title, body, onSave) => { globalThis.__save = onSave; globalThis.__modal = title + body; };
     globalThis.__getData = () => data;
     globalThis.__setData = (next) => { data = next; currentRole = "admin"; currentUser = "owner"; };
   `, context);
@@ -46,5 +46,6 @@ export function loadFrontend() {
     set data(next) { context.__setData(structuredClone(next)); },
     run: (code: string) => vm.runInContext(code, context),
     save: () => context.__save(),
+    modalHtml: () => context.__modal as string,
   };
 }

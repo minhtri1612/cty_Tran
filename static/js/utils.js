@@ -64,7 +64,7 @@ function badge(text) {
           : text === "Hoàn thành"
             ? ""
             : "blue";
-  return `<span class="pill ${c}"><i class="dot"></i>${text}</span>`;
+  return `<span class="pill ${c}"><i class="dot"></i>${esc(text)}</span>`;
 }
 
 async function resizeImageData(file) {
@@ -119,4 +119,35 @@ function closeModal() {
 }
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeModal();
+});
+
+// Click handlers that need stored data (codes, ids, names) carry it in data-*
+// attributes, HTML-escaped by esc(), and are dispatched here. Text from the
+// database is never placed inside inline JavaScript, where &#39; would decode
+// back into a quote and end the string.
+const clickActions = new Set([
+  "deleteSupplierCategory",
+  "deleteUser",
+  "docModal",
+  "editMaterial",
+  "materialDetail",
+  "removeDoc",
+  "renameSupplierCategory",
+  "showCountDetails",
+  "showDocDetails",
+  "showDocHistory",
+  "showOrderDetails",
+  "toggleOrderStatus",
+]);
+function act(name, ...args) {
+  return `data-act="${esc(name)}" data-args="${esc(JSON.stringify(args))}"`;
+}
+function actClose(name, ...args) {
+  return `${act(name, ...args)} data-close-modal`;
+}
+document.addEventListener("click", (event) => {
+  const el = event.target.closest?.("[data-act]");
+  if (!el || !clickActions.has(el.dataset.act)) return;
+  if (el.hasAttribute("data-close-modal")) closeModal();
+  globalThis[el.dataset.act](...JSON.parse(el.dataset.args || "[]"));
 });

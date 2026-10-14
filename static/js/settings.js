@@ -32,7 +32,7 @@ async function loadUsers() {
     const r = await fetch("/api/users", { cache: "no-store" }),
       j = await r.json();
     if (!r.ok) throw Error(j.error || "Không tải được tài khoản");
-    box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>TÊN ĐĂNG NHẬP</th><th>VAI TRÒ</th><th>NGÀY TẠO</th><th></th></tr></thead><tbody>${j.users.map((u) => `<tr><td class="primary-text">${esc(u.username)}</td><td>${u.role === "admin" ? "Quản trị viên" : "Nhân viên kho"}</td><td>${new Date(u.created_at * 1000).toLocaleDateString("vi-VN")}</td><td>${u.username === currentUser ? "" : `<button class="link-button" onclick="deleteUser('${esc(u.username)}')">Xóa</button>`}</td></tr>`).join("")}</tbody></table></div>`;
+    box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>TÊN ĐĂNG NHẬP</th><th>VAI TRÒ</th><th>NGÀY TẠO</th><th></th></tr></thead><tbody>${j.users.map((u) => `<tr><td class="primary-text">${esc(u.username)}</td><td>${u.role === "admin" ? "Quản trị viên" : "Nhân viên kho"}</td><td>${new Date(u.created_at * 1000).toLocaleDateString("vi-VN")}</td><td>${u.username === currentUser ? "" : `<button class="link-button" ${act("deleteUser", u.username)}>Xóa</button>`}</td></tr>`).join("")}</tbody></table></div>`;
   } catch (e) {
     box.innerHTML = `<span class="subtle">${esc(e.message || "Không tải được tài khoản")}</span>`;
   }

@@ -23,7 +23,7 @@ function viewDocs(kind) {
           return Number.isNaN(d.valueOf())
             ? ""
             : d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-        })()}"><td class="code">${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td>${incoming ? "" : `<td>${esc(r[3])}</td><td>${esc(r[4])}</td>`}<td>${incoming ? r[3] : r[5]}</td>${incoming ? `<td>${money(r[4])}</td>` : ""}<td>${esc(currentUser)}</td><td><button class="link-button" onclick="showDocDetails('${esc(r[0])}','${kind}')">Chi tiết</button></td></tr>`,
+        })()}"><td class="code">${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td>${incoming ? "" : `<td>${esc(r[3])}</td><td>${esc(r[4])}</td>`}<td>${incoming ? r[3] : r[5]}</td>${incoming ? `<td>${money(r[4])}</td>` : ""}<td>${esc(currentUser)}</td><td><button class="link-button" ${act("showDocDetails", r[0], kind)}>Chi tiết</button></td></tr>`,
     )
     .join(
       "",
@@ -61,7 +61,7 @@ function showDocDetails(id, kind) {
     lines = documentLines(id, row, incoming),
     title = incoming ? "Phiếu nhập kho" : "Phiếu xuất kho";
   document.getElementById("modalRoot").innerHTML =
-    `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><section class="modal" role="dialog"><div class="modal-head"><div><h2>${title} · ${esc(id)}</h2><p>${incoming ? "Phiếu nhập kho" : "Phiếu xuất kho"} · ngày ${esc(row[1])}</p></div><button onclick="closeModal()">×</button></div><div class="modal-body"><div class="doc-summary"><div><small>Mã phiếu</small><b>${esc(id)}</b></div><div><small>Ngày phiếu</small><b>${esc(row[1])}</b></div><div><small>${incoming ? "Nguồn hàng" : "Khách hàng"}</small><b>${esc(row[2] || "—")}</b></div><div><small>Người lập</small><b>${esc(detail.created_by || "—")}</b></div>${!incoming ? `<div><small>Đơn hàng</small><b>${esc(row[3] || "—")}</b></div><div><small>Loại xuất</small><b>${esc(row[4] || "—")}</b></div>` : ""}<div class="full"><small>Ghi chú</small><b>${esc(detail.note || "—")}</b></div></div><div class="tabs"><button class="tab active" onclick="showDocDetails('${esc(id)}','${kind}')">Dòng NVL</button><button class="tab" onclick="showDocHistory('${esc(id)}','${kind}')">Lịch sử sửa (${detail.history?.length || 0})</button></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Mã NVL</th><th>Tên NVL</th><th>ĐVT</th><th>Số lượng</th>${incoming ? "<th>Đơn giá</th><th>Thành tiền</th><th>Nguồn hàng</th>" : ""}<th>Tồn sau</th></tr></thead><tbody>${
+    `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><section class="modal" role="dialog"><div class="modal-head"><div><h2>${title} · ${esc(id)}</h2><p>${incoming ? "Phiếu nhập kho" : "Phiếu xuất kho"} · ngày ${esc(row[1])}</p></div><button onclick="closeModal()">×</button></div><div class="modal-body"><div class="doc-summary"><div><small>Mã phiếu</small><b>${esc(id)}</b></div><div><small>Ngày phiếu</small><b>${esc(row[1])}</b></div><div><small>${incoming ? "Nguồn hàng" : "Khách hàng"}</small><b>${esc(row[2] || "—")}</b></div><div><small>Người lập</small><b>${esc(detail.created_by || "—")}</b></div>${!incoming ? `<div><small>Đơn hàng</small><b>${esc(row[3] || "—")}</b></div><div><small>Loại xuất</small><b>${esc(row[4] || "—")}</b></div>` : ""}<div class="full"><small>Ghi chú</small><b>${esc(detail.note || "—")}</b></div></div><div class="tabs"><button class="tab active" ${act("showDocDetails", id, kind)}>Dòng NVL</button><button class="tab" ${act("showDocHistory", id, kind)}>Lịch sử sửa (${detail.history?.length || 0})</button></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Mã NVL</th><th>Tên NVL</th><th>ĐVT</th><th>Số lượng</th>${incoming ? "<th>Đơn giá</th><th>Thành tiền</th><th>Nguồn hàng</th>" : ""}<th>Tồn sau</th></tr></thead><tbody>${
       lines
         .map((line, i) => {
           const m = data.materials.find((z) => z[0] === line.code);
@@ -69,7 +69,7 @@ function showDocDetails(id, kind) {
         })
         .join("") ||
       '<tr><td colspan="9">Không còn dòng chi tiết trong sổ kho.</td></tr>'
-    }</tbody></table></div>${incoming ? `<p class="doc-total"><b>Tổng tiền:</b> ${money(row[4])}</p>` : ""}</div><div class="modal-foot">${currentRole === "admin" ? `<button class="btn danger" onclick="removeDoc('${esc(id)}','${kind}')">Xóa phiếu</button><button class="btn" onclick="closeModal();docModal('${kind}','${esc(id)}')">✎ Sửa phiếu</button>` : ""}<div class="top-spacer"></div><button class="btn primary" onclick="closeModal()">Đóng</button></div></section></div>`;
+    }</tbody></table></div>${incoming ? `<p class="doc-total"><b>Tổng tiền:</b> ${money(row[4])}</p>` : ""}</div><div class="modal-foot">${currentRole === "admin" ? `<button class="btn danger" ${act("removeDoc", id, kind)}>Xóa phiếu</button><button class="btn" ${actClose("docModal", kind, id)}>✎ Sửa phiếu</button>` : ""}<div class="top-spacer"></div><button class="btn primary" onclick="closeModal()">Đóng</button></div></section></div>`;
 }
 function showDocHistory(id, kind) {
   const meta = data.doc_details?.[id] || {},

@@ -19,9 +19,22 @@ export async function requireAdmin(request: Request, response: Response, next: N
   next();
 }
 
+// CSRF defence for state-changing requests (on top of SameSite=Strict
+// cookies): reject browser requests from another site. Requests without
+// Origin/Sec-Fetch-Site (non-browser clients) still need a valid session.
+// Behind Caddy the original Host header is passed through unchanged.
 export function sameOrigin(request: Request, response: Response, next: NextFunction) {
-  if (!request.headers.origin) return next();
-  const host = new URL(request.headers.origin).host;
-  if (host !== request.headers.host) return response.status(403).json({ error: "Yêu cầu không cùng nguồn" });
+  const reject = () => response.status(403).json({ error: "Yêu cầu không cùng nguồn" });
+  const site = request.headers["sec-fetch-site"];
+  if (site && site !== "same-origin" && site !== "none") return reject();
+  const origin = request.headers.origin;
+  if (!origin) return next();
+  let host = "";
+  try {
+    host = new URL(origin).host;
+  } catch {
+    return reject();
+  }
+  if (!host || host !== request.headers.host) return reject();
   next();
 }

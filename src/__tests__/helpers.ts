@@ -24,7 +24,7 @@ export function migrate(path: string) {
   });
 }
 
-type CallOptions = { method?: string; body?: unknown; cookie?: string; headers?: Record<string, string> };
+type CallOptions = { method?: string; body?: unknown; raw?: string; cookie?: string; headers?: Record<string, string> };
 
 export async function startServer() {
   const { app } = await import("../app.js");
@@ -32,11 +32,11 @@ export async function startServer() {
     const started = app.listen(0, "127.0.0.1", () => done(started));
   });
   const port = (server.address() as { port: number }).port;
-  async function call(path: string, { method = "GET", body, cookie, headers = {} }: CallOptions = {}) {
+  async function call(path: string, { method = "GET", body, raw, cookie, headers = {} }: CallOptions = {}) {
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
       method,
       headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}), ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
     });
     const text = await response.text();
     let json: any = {};

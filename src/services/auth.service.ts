@@ -15,6 +15,16 @@ export function sameSecret(left: Buffer | Uint8Array, right: Buffer | Uint8Array
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// Unknown usernames still pay for one PBKDF2 run, so response time does not
+// reveal which usernames exist.
+const dummySalt = randomBytes(16);
+const dummyHash = passwordHash(randomBytes(16).toString("hex"), dummySalt);
+
+export function checkPassword(row: { passwordSalt: Uint8Array; passwordHash: Uint8Array } | null, password: string) {
+  const matches = sameSecret(passwordHash(password, Buffer.from(row ? row.passwordSalt : dummySalt)), row ? row.passwordHash : dummyHash);
+  return Boolean(row) && matches;
+}
+
 function tokenHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -63,6 +73,7 @@ export function tooManyLogins(remote: string) {
 }
 
 export function noteFailedLogin(remote: string) {
+  if (loginFailures.size > 10_000) loginFailures.clear();
   const recent = loginFailures.get(remote) || [];
   recent.push(Math.floor(Date.now() / 1000));
   loginFailures.set(remote, recent);
@@ -81,6 +92,18 @@ export async function userExists() {
   return Boolean(row);
 }
 
+// Creates the first admin only if no user exists yet, in one transaction, so
+// two concurrent setup requests cannot both create an admin.
+export function createFirstAdmin(username: string, password: string) {
+  const salt = randomBytes(16);
+  const hash = passwordHash(password, salt);
+  return prisma.$transaction(async (tx) => {
+    if (await tx.user.findFirst({ select: { username: true } })) return false;
+    await tx.user.create({ data: { username, passwordSalt: salt, passwordHash: hash, createdAt: Math.floor(Date.now() / 1000), role: "admin" } });
+    return true;
+  });
+}
+
 export async function insertUser(username: string, password: string, role: string) {
   const salt = randomBytes(16);
   await prisma.user.create({
@@ -94,17 +117,22 @@ export function listUsers() {
 
 export async function updatePassword(username: string, password: string) {
   const salt = randomBytes(16);
-  await prisma.user.update({ where: { username }, data: { passwordSalt: salt, passwordHash: passwordHash(password, salt) } });
-  await prisma.session.deleteMany({ where: { username } });
+  const hash = passwordHash(password, salt);
+  await prisma.$transaction([
+    prisma.user.update({ where: { username }, data: { passwordSalt: salt, passwordHash: hash } }),
+    prisma.session.deleteMany({ where: { username } }),
+  ]);
 }
 
-export async function removeUser(username: string) {
-  const target = await prisma.user.findUnique({ where: { username } });
-  if (!target) return "missing" as const;
-  const admins = await prisma.user.count({ where: { role: "admin" } });
-  if (target.role === "admin" && admins <= 1) return "last-admin" as const;
-  await prisma.user.delete({ where: { username } });
-  return "ok" as const;
+export function removeUser(username: string) {
+  return prisma.$transaction(async (tx) => {
+    const target = await tx.user.findUnique({ where: { username } });
+    if (!target) return "missing" as const;
+    const admins = await tx.user.count({ where: { role: "admin" } });
+    if (target.role === "admin" && admins <= 1) return "last-admin" as const;
+    await tx.user.delete({ where: { username } });
+    return "ok" as const;
+  });
 }
 
 export function isUniqueError(error: unknown) {
