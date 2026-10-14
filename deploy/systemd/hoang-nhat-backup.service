@@ -1,0 +1,9 @@
+[Unit]
+Description=Hoàng Nhật SCM SQLite backup to S3
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/srv/hoang-nhat/backup.env
+ExecStart=/srv/hoang-nhat/app/deploy/backup.sh
