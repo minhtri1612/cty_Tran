@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -42,7 +42,7 @@ model Material {
 
 model MaterialProfile {
   code        String @id
-  profileJson String @map("profile_json") @db.LongText
+  profileJson String @map("profile_json")
 
   @@map("material_profiles")
 }
@@ -95,7 +95,7 @@ model SupplierCategory {
 
 model SupplierProfile {
   name        String   @id
-  profileJson String   @map("profile_json") @db.LongText
+  profileJson String   @map("profile_json")
   supplier    Supplier @relation(fields: [name], references: [name], onDelete: Cascade)
 
   @@map("supplier_profiles")
@@ -103,21 +103,21 @@ model SupplierProfile {
 
 model SupplierProduct {
   supplier     String @id
-  productsJson String @map("products_json") @db.LongText
+  productsJson String @map("products_json")
 
   @@map("supplier_products")
 }
 
 model DocumentDetail {
   id         String @id
-  detailJson String @map("detail_json") @db.LongText
+  detailJson String @map("detail_json")
 
   @@map("document_details")
 }
 
 model OrderDetail {
   id         String @id
-  detailJson String @map("detail_json") @db.LongText
+  detailJson String @map("detail_json")
 
   @@map("order_details")
 }

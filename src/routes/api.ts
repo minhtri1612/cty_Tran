@@ -7,7 +7,7 @@ import { requireAdmin, requireUser, sameOrigin } from "../middleware/auth.js";
 
 export const apiRouter = Router();
 
-apiRouter.get("/health", (_request, response) => response.json({ ok: true, database: "mysql" }));
+apiRouter.get("/health", (_request, response) => response.json({ ok: true, database: "sqlite" }));
 apiRouter.get("/auth/status", status);
 apiRouter.post("/auth/setup", sameOrigin, setup);
 apiRouter.post("/auth/login", sameOrigin, login);

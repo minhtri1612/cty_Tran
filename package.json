@@ -3,10 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "start": "tsx src/server.ts",
-    "test": "tsx --test src/__tests__/auth.test.ts",
-    "db:push": "prisma db push"
+    "build": "prisma generate && tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit --noCheck false",
+    "test": "tsx --test --test-timeout=60000 src/__tests__/*.test.ts",
+    "db:migrate": "node scripts/prisma.mjs migrate deploy",
+    "db:status": "node scripts/prisma.mjs migrate status"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
