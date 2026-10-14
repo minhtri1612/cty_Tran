@@ -66,12 +66,12 @@ function zipStored(files) {
 }
 
 export async function buildReport() {
-  const [materialRows, receiptRows, issueRows, ledgerRows] = await Promise.all([
-    prisma.material.findMany({ orderBy: { code: "asc" } }),
-    prisma.receipt.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
-    prisma.issue.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
-    prisma.ledger.findMany({ orderBy: { id: "desc" } }),
-  ]);
+  const [materialRows, receiptRows, issueRows, ledgerRows] = await prisma.$transaction(async (tx) => Promise.all([
+    tx.material.findMany({ orderBy: { code: "asc" } }),
+    tx.receipt.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    tx.issue.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    tx.ledger.findMany({ orderBy: { id: "desc" } }),
+  ]));
   const materials = materialRows.map((row) => [row.code, row.name, row.category, row.unit, row.quantity, row.minimum, row.price]);
   const receipts = receiptRows.map((row) => [row.id, row.date, row.party, row.lineCount, row.total]);
   const issues = issueRows.map((row) => [row.id, row.date, row.party, row.orderId, row.kind, row.lineCount]);

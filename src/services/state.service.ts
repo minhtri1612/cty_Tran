@@ -1,4 +1,16 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../config/database.js";
+
+type Db = Prisma.TransactionClient;
+
+export class StaleVersionError extends Error {
+  constructor(readonly current: number) {
+    super("stale version");
+  }
+}
+
+export class SaveForbiddenError extends Error {}
+
 
 const imagePattern = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 
@@ -22,22 +34,22 @@ function addCount(map, key, amount = 1) {
   map.set(key, (map.get(key) || 0) + amount);
 }
 
-export async function readState() {
+export async function readState(db: Db = prisma) {
   const [materials, materialProfiles, receipts, issues, orders, suppliers, supplierCategories, supplierProfiles, supplierProducts, docDetails, orderDetails, customers, ledger, counts] = await Promise.all([
-    prisma.material.findMany({ orderBy: { code: "asc" } }),
-    prisma.materialProfile.findMany(),
-    prisma.receipt.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
-    prisma.issue.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
-    prisma.order.findMany({ orderBy: [{ signedDate: "desc" }, { id: "desc" }] }),
-    prisma.supplier.findMany({ orderBy: { name: "asc" } }),
-    prisma.supplierCategory.findMany({ orderBy: { name: "asc" } }),
-    prisma.supplierProfile.findMany(),
-    prisma.supplierProduct.findMany(),
-    prisma.documentDetail.findMany(),
-    prisma.orderDetail.findMany(),
-    prisma.customer.findMany({ orderBy: { name: "asc" } }),
-    prisma.ledger.findMany({ orderBy: { id: "desc" } }),
-    prisma.inventoryCount.findMany({ orderBy: { id: "desc" } }),
+    db.material.findMany({ orderBy: { code: "asc" } }),
+    db.materialProfile.findMany(),
+    db.receipt.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    db.issue.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    db.order.findMany({ orderBy: [{ signedDate: "desc" }, { id: "desc" }] }),
+    db.supplier.findMany({ orderBy: { name: "asc" } }),
+    db.supplierCategory.findMany({ orderBy: { name: "asc" } }),
+    db.supplierProfile.findMany(),
+    db.supplierProduct.findMany(),
+    db.documentDetail.findMany(),
+    db.orderDetail.findMany(),
+    db.customer.findMany({ orderBy: { name: "asc" } }),
+    db.ledger.findMany({ orderBy: { id: "desc" } }),
+    db.inventoryCount.findMany({ orderBy: { id: "desc" } }),
   ]);
   return {
     materials: materials.map((row) => [row.code, row.name, row.category, row.unit, row.quantity, row.minimum, row.price]),
@@ -57,9 +69,15 @@ export async function readState() {
   };
 }
 
-export async function stateVersion() {
-  const row = await prisma.appMeta.findUnique({ where: { key: "version" } });
+export async function stateVersion(db: Db = prisma) {
+  const row = await db.appMeta.findUnique({ where: { key: "version" } });
   return Number(row?.value || 0);
+}
+
+// Data and version from one read transaction, so a client never receives new
+// data with an old version (or the reverse) while a save commits in between.
+export function readSnapshot() {
+  return prisma.$transaction(async (tx) => ({ data: await readState(tx), version: await stateVersion(tx) }));
 }
 
 function keysOutside(value, allowed) {
@@ -243,8 +261,7 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export async function warehouseChangeError(data) {
-  const old = await readState();
+export function warehouseChangeError(data, old) {
   if (!sameJson(data.suppliers, old.suppliers) || !sameJson(data.customers, old.customers) || !sameJson(data.supplier_profiles || {}, old.supplier_profiles) || !sameJson(data.supplier_categories || [], old.supplier_categories) || !sameJson(data.supplier_products || {}, old.supplier_products)) {
     return "Nhân viên kho không được sửa danh mục nhà cung cấp hoặc khách hàng";
   }
@@ -370,43 +387,59 @@ function whenRows(rows, query) {
   return rows.length ? [query] : [];
 }
 
-export async function replaceState(data) {
-  const current = await stateVersion();
+async function writeState(tx: Db, data) {
   const profiles = Object.entries(data.material_profiles || {}).map(([code, profile]) => ({ code, profileJson: JSON.stringify(profile) }));
   const supplierProfiles = Object.entries(data.supplier_profiles || {}).map(([name, profile]) => ({ name, profileJson: JSON.stringify(profile) }));
   const supplierProducts = Object.entries(data.supplier_products || {}).map(([supplier, products]) => ({ supplier, productsJson: JSON.stringify(products) }));
   const documents = Object.entries(data.doc_details || {}).map(([id, detail]) => ({ id, detailJson: JSON.stringify(detail) }));
   const orderDetails = Object.entries(data.order_details || {}).map(([id, detail]) => ({ id, detailJson: JSON.stringify(detail) }));
-  await prisma.$transaction([
-    prisma.materialProfile.deleteMany(),
-    prisma.supplierProfile.deleteMany(),
-    prisma.supplierProduct.deleteMany(),
-    prisma.documentDetail.deleteMany(),
-    prisma.orderDetail.deleteMany(),
-    prisma.material.deleteMany(),
-    prisma.receipt.deleteMany(),
-    prisma.issue.deleteMany(),
-    prisma.order.deleteMany(),
-    prisma.supplierCategory.deleteMany(),
-    prisma.supplier.deleteMany(),
-    prisma.customer.deleteMany(),
-    prisma.ledger.deleteMany(),
-    prisma.inventoryCount.deleteMany(),
-    ...whenRows(data.materials, prisma.material.createMany({ data: data.materials.map((row) => ({ code: row[0], name: row[1], category: row[2], unit: row[3], quantity: row[4], minimum: row[5], price: row[6] })) })),
-    ...whenRows(profiles, prisma.materialProfile.createMany({ data: profiles })),
-    ...whenRows(data.receipts, prisma.receipt.createMany({ data: data.receipts.map((row) => ({ id: row[0], date: row[1], party: row[2], lineCount: row[3], total: row[4] })) })),
-    ...whenRows(data.issues, prisma.issue.createMany({ data: data.issues.map((row) => ({ id: row[0], date: row[1], party: row[2], orderId: row[3], kind: row[4], lineCount: row[5] })) })),
-    ...whenRows(data.orders, prisma.order.createMany({ data: data.orders.map((row) => ({ id: row[0], customer: row[1], signedDate: row[2], product: row[3], quantity: row[4], issueCount: row[5], status: row[6] })) })),
-    ...whenRows(data.suppliers, prisma.supplier.createMany({ data: data.suppliers.map((name) => ({ name })) })),
-    ...whenRows(data.supplier_categories || [], prisma.supplierCategory.createMany({ data: data.supplier_categories.map((name) => ({ name })) })),
-    ...whenRows(supplierProfiles, prisma.supplierProfile.createMany({ data: supplierProfiles })),
-    ...whenRows(supplierProducts, prisma.supplierProduct.createMany({ data: supplierProducts })),
-    ...whenRows(documents, prisma.documentDetail.createMany({ data: documents })),
-    ...whenRows(orderDetails, prisma.orderDetail.createMany({ data: orderDetails })),
-    ...whenRows(data.customers, prisma.customer.createMany({ data: data.customers.map((name) => ({ name })) })),
-    ...whenRows(data.ledger, prisma.ledger.createMany({ data: [...data.ledger].reverse().map((row) => ({ date: row[0], materialCode: row[1], kind: row[2], quantity: row[3], reference: row[4] })) })),
-    ...whenRows(data.counts || [], prisma.inventoryCount.createMany({ data: [...data.counts].reverse().map((count) => ({ id: count.id, date: count.date, note: count.note, createdBy: count.created_by, linesJson: JSON.stringify(count.lines) })) })),
-    prisma.appMeta.upsert({ where: { key: "version" }, create: { key: "version", value: String(current + 1) }, update: { value: String(current + 1) } }),
-  ]);
-  return current + 1;
+  await tx.materialProfile.deleteMany();
+  await tx.supplierProfile.deleteMany();
+  await tx.supplierProduct.deleteMany();
+  await tx.documentDetail.deleteMany();
+  await tx.orderDetail.deleteMany();
+  await tx.material.deleteMany();
+  await tx.receipt.deleteMany();
+  await tx.issue.deleteMany();
+  await tx.order.deleteMany();
+  await tx.supplierCategory.deleteMany();
+  await tx.supplier.deleteMany();
+  await tx.customer.deleteMany();
+  await tx.ledger.deleteMany();
+  await tx.inventoryCount.deleteMany();
+  if (data.materials.length) await tx.material.createMany({ data: data.materials.map((row) => ({ code: row[0], name: row[1], category: row[2], unit: row[3], quantity: row[4], minimum: row[5], price: row[6] })) });
+  if (profiles.length) await tx.materialProfile.createMany({ data: profiles });
+  if (data.receipts.length) await tx.receipt.createMany({ data: data.receipts.map((row) => ({ id: row[0], date: row[1], party: row[2], lineCount: row[3], total: row[4] })) });
+  if (data.issues.length) await tx.issue.createMany({ data: data.issues.map((row) => ({ id: row[0], date: row[1], party: row[2], orderId: row[3], kind: row[4], lineCount: row[5] })) });
+  if (data.orders.length) await tx.order.createMany({ data: data.orders.map((row) => ({ id: row[0], customer: row[1], signedDate: row[2], product: row[3], quantity: row[4], issueCount: row[5], status: row[6] })) });
+  if (data.suppliers.length) await tx.supplier.createMany({ data: data.suppliers.map((name) => ({ name })) });
+  if ((data.supplier_categories || []).length) await tx.supplierCategory.createMany({ data: data.supplier_categories.map((name) => ({ name })) });
+  if (supplierProfiles.length) await tx.supplierProfile.createMany({ data: supplierProfiles });
+  if (supplierProducts.length) await tx.supplierProduct.createMany({ data: supplierProducts });
+  if (documents.length) await tx.documentDetail.createMany({ data: documents });
+  if (orderDetails.length) await tx.orderDetail.createMany({ data: orderDetails });
+  if (data.customers.length) await tx.customer.createMany({ data: data.customers.map((name) => ({ name })) });
+  if (data.ledger.length) await tx.ledger.createMany({ data: [...data.ledger].reverse().map((row) => ({ date: row[0], materialCode: row[1], kind: row[2], quantity: row[3], reference: row[4] })) });
+  if ((data.counts || []).length) await tx.inventoryCount.createMany({ data: [...data.counts].reverse().map((count) => ({ id: count.id, date: count.date, note: count.note, createdBy: count.created_by, linesJson: JSON.stringify(count.lines) })) });
+}
+
+// Replaces the whole state if and only if the stored version still equals
+// `expected`. The first statement is the compare-and-swap UPDATE on the version
+// row, which takes SQLite's write lock before anything is read, so the role and
+// warehouse checks below see exactly the data being replaced. Any throw rolls
+// the whole transaction back, including the version bump.
+export function saveState(data, expected: number, username: string) {
+  return prisma.$transaction(async (tx) => {
+    const next = expected + 1;
+    const swapped = await tx.appMeta.updateMany({ where: { key: "version", value: String(expected) }, data: { value: String(next) } });
+    if (swapped.count !== 1) throw new StaleVersionError(await stateVersion(tx));
+    const user = await tx.user.findUnique({ where: { username }, select: { role: true } });
+    if (!user) throw new SaveForbiddenError("Vui lòng đăng nhập lại");
+    if (user.role !== "admin") {
+      const blocked = warehouseChangeError(data, await readState(tx));
+      if (blocked) throw new SaveForbiddenError(blocked);
+    }
+    await writeState(tx, data);
+    return next;
+  }, { maxWait: 30_000, timeout: 60_000 });
 }

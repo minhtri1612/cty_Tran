@@ -43,6 +43,21 @@ let saving = Promise.resolve();
 let page = "dashboard";
 let materialFilter = "Tất cả";
 let supplierFilterCategory = "";
+// Reloads server data after a failed save. Returns false when the session is
+// gone (the login screen is shown instead).
+async function reloadState() {
+  const r = await fetch("/api/state", { cache: "no-store" });
+  if (r.status === 401) {
+    renderAuth(true, "Phiên đăng nhập đã hết hạn. Thay đổi vừa rồi CHƯA được lưu.");
+    return false;
+  }
+  if (!r.ok) throw Error("Không tải lại được dữ liệu");
+  const fresh = await r.json();
+  data = fresh.data;
+  stateVersion = fresh.version;
+  render();
+  return true;
+}
 function persist() {
   saving = saving
     .then(async () => {
@@ -53,31 +68,27 @@ function persist() {
       });
       const result = await r.json().catch(() => ({}));
       if (r.status === 409) {
-        const fresh = await fetch("/api/state", { cache: "no-store" }).then(
-          (x) => x.json(),
-        );
-        data = fresh.data;
-        stateVersion = fresh.version;
-        render();
-        toast(
-          "Dữ liệu đã được tải lại do có người khác vừa lưu. Hãy kiểm tra và nhập lại thay đổi.",
-        );
+        if (await reloadState())
+          toast(
+            "CHƯA LƯU: người khác vừa lưu dữ liệu. Dữ liệu mới nhất đã được tải lại — hãy kiểm tra và nhập lại thay đổi.",
+          );
         return false;
       }
-      if (!r.ok) throw Error(result.error || "Không lưu được database");
-      stateVersion = result.version ?? stateVersion + 1;
+      if (r.status === 401) {
+        renderAuth(true, "Phiên đăng nhập đã hết hạn. Thay đổi vừa rồi CHƯA được lưu.");
+        return false;
+      }
+      if (!r.ok) throw Error(result.error || "Không lưu được dữ liệu");
+      stateVersion = result.version;
       return true;
     })
     .catch(async (e) => {
+      const message =
+        e instanceof TypeError ? "mất kết nối tới máy chủ" : e.message;
       try {
-        const fresh = await fetch("/api/state", { cache: "no-store" }).then(
-          (x) => x.json(),
-        );
-        data = fresh.data;
-        stateVersion = fresh.version;
-        render();
+        if (!(await reloadState())) return false;
       } catch {}
-      toast(e.message || "Không lưu được database");
+      toast(`CHƯA LƯU: ${message || "Không lưu được dữ liệu"}`);
       return false;
     });
   return saving;
@@ -94,7 +105,7 @@ async function startApp() {
     console.error(e);
     document.getElementById("shell").style.display = "none";
     document.getElementById("authRoot").innerHTML =
-      `<div class="auth-screen"><div class="auth-card"><h1>Không kết nối được backend</h1><p>${esc(e.message || "Hãy chạy máy chủ bằng lệnh python server.py rồi tải lại trang.")}</p></div></div>`;
+      `<div class="auth-screen"><div class="auth-card"><h1>Không kết nối được backend</h1><p>${esc(e.message || "Hãy kiểm tra máy chủ rồi tải lại trang.")}</p></div></div>`;
   }
 }
 function renderAuth(configured, error = "", requiresToken = false) {
