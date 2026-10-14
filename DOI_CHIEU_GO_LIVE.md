@@ -1,5 +1,7 @@
 # Đối chiếu Hoàng Nhật SCM local với dashboard tham chiếu
 
+> **Lưu ý (14/10/2026):** tài liệu này viết cho phiên bản cũ (backend Python `server.py`, triển khai Render/PostgreSQL). Kiến trúc hiện tại (Node.js/TypeScript, Prisma + SQLite, Docker Compose + Caddy trên EC2) xem `README.md` và `docs/DEPLOY.md`. Phần mô tả chức năng nghiệp vụ vẫn còn giá trị tham khảo.
+
 Ngày rà soát: 13/10/2026. So sánh với trang `/xuat-kho`, các màn hình danh bạ, kiểm kê, cài đặt, phiếu nhập và đơn hàng trong ảnh người dùng gửi. Chỉ thao tác dữ liệu thử trong database QA cục bộ; không sửa dữ liệu trên website tham chiếu.
 
 ## Đã làm trong bản local

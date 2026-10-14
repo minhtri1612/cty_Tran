@@ -1,5 +1,7 @@
 # 📐 Sơ Đồ Hệ Thống Hoàng Nhật SCM Dashboard
 
+> **Lưu ý (14/10/2026):** tài liệu này viết cho phiên bản cũ (backend Python `server.py`, triển khai Render/PostgreSQL). Kiến trúc hiện tại (Node.js/TypeScript, Prisma + SQLite, Docker Compose + Caddy trên EC2) xem `README.md` và `docs/DEPLOY.md`. Phần mô tả chức năng nghiệp vụ vẫn còn giá trị tham khảo.
+
 ---
 
 ## 1. Sơ đồ Kiến trúc Tổng quan
