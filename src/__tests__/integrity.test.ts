@@ -1,3 +1,4 @@
+import "./temp-db.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { validateState } from "../services/state.service.js";

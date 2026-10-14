@@ -1,41 +1,11 @@
+import "./temp-db.js";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { migrate, startServer, useTempDatabase } from "./helpers.js";
+import { productionServer, startServer } from "./helpers.js";
 
-useTempDatabase();
 const { call, close } = await startServer();
 const { prisma } = await import("../config/database.js");
 after(close);
-
-const root = resolve(import.meta.dirname, "../..");
-
-// Starts the real server entry point in a child process with its own env and
-// database, for settings that are read once at startup (NODE_ENV, proxies).
-async function productionServer(env: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), "hn-scm-prod-"));
-  const path = join(dir, "prod.sqlite3");
-  migrate(path);
-  const port = 20000 + Math.floor(Math.random() * 20000);
-  const child = spawn(process.execPath, ["--import", "tsx", resolve(root, "src/server.ts")], {
-    env: { ...process.env, NODE_ENV: "production", SCM_DB_PATH: path, SCM_PORT: String(port), PORT: "", SCM_HOST: "127.0.0.1", SETUP_TOKEN: "", ...env },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  child.stdout.on("data", (chunk) => { output += chunk; });
-  child.stderr.on("data", (chunk) => { output += chunk; });
-  for (let attempt = 0; attempt < 100 && !output.includes("listening"); attempt += 1) await new Promise((done) => setTimeout(done, 100));
-  assert.ok(output.includes("listening"), output);
-  const base = `http://127.0.0.1:${port}`;
-  return {
-    post: (path: string, body: unknown, headers: Record<string, string> = {}) =>
-      fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) }),
-    stop: () => child.kill(),
-  };
-}
 
 test("production refuses initial setup without a configured setup token", async () => {
   const server = await productionServer({});
@@ -153,7 +123,7 @@ test("invalid JSON and unknown API paths return clean errors", async () => {
   const badJson = await call("/api/auth/login", { method: "POST", raw: "{not json" });
   assert.equal(badJson.status, 400);
   assert.match(badJson.json.error, /JSON/);
-  const tooLarge = await call("/api/auth/login", { method: "POST", raw: JSON.stringify({ username: "x".repeat(7 * 1024 * 1024) }) });
+  const tooLarge = await call("/api/auth/login", { method: "POST", raw: JSON.stringify({ username: "x".repeat(17 * 1024 * 1024) }) });
   assert.equal(tooLarge.status, 413);
   const notFound = await call("/api/nope", { cookie: admin });
   assert.equal(notFound.status, 404);

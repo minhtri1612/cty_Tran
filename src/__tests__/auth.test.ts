@@ -1,8 +1,8 @@
+import "./temp-db.js";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { startServer, useTempDatabase } from "./helpers.js";
+import { startServer } from "./helpers.js";
 
-useTempDatabase();
 const { call, close } = await startServer();
 after(close);
 

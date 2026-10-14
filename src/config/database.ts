@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 
@@ -7,6 +8,12 @@ if (!process.env.SCM_DB_PATH && existsSync(resolve(root, ".env"))) process.loadE
 
 export function databasePath() {
   return resolve(root, process.env.SCM_DB_PATH || "data/hoang-nhat.sqlite3");
+}
+
+// Under `node --test`, refuse anything but a temporary database so a test can
+// never write to a developer's or a real database.
+if (process.env.NODE_TEST_CONTEXT && !databasePath().startsWith(tmpdir())) {
+  throw new Error(`Tests must use a temporary database (import ./temp-db.js first), not ${databasePath()}`);
 }
 
 // One connection: every write in this process is serialized through it, and the

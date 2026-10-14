@@ -1,10 +1,11 @@
+import { dbPath } from "./temp-db.js";
 import assert from "node:assert/strict";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { migrate, useTempDatabase } from "./helpers.js";
+import { migrate } from "./helpers.js";
 
-const path = useTempDatabase();
+const path = dbPath;
 const { prisma, checkDatabase } = await import("../config/database.js");
 
 test("migrate deploy creates the schema and seeds version 0", async () => {

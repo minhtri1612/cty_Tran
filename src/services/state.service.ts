@@ -2,6 +2,9 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../config/database.js";
 
 type Db = Prisma.TransactionClient;
+// The whole-state payload is untrusted JSON; validateState() is what gives it
+// its shape, so it is typed loosely here on purpose.
+type StateJson = any;
 
 export class StaleVersionError extends Error {
   constructor(readonly current: number) {
@@ -13,6 +16,12 @@ export class SaveForbiddenError extends Error {}
 
 
 const imagePattern = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+// Deliberately not a type guard: narrowing the loosely typed payload to
+// \`object\` would hide its fields from the checks below.
+function isRecord(value): boolean {
+  return Boolean(value) && typeof value === "object";
+}
 
 function isNum(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -34,13 +43,36 @@ function addCount(map, key, amount = 1) {
   map.set(key, (map.get(key) || 0) + amount);
 }
 
+const datePattern = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+
+// Dates are stored as DD/MM/YYYY (the format the UI writes); compare them as
+// YYYY-MM-DD so 31/01 does not sort after 15/10.
+export function dateKey(value: string) {
+  const match = datePattern.exec(value);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : "";
+}
+
+export function newestFirst<T extends { id: string }>(rows: T[], field: keyof T) {
+  return [...rows].sort((left, right) => {
+    const byDate = dateKey(String(right[field])).localeCompare(dateKey(String(left[field])));
+    return byDate || (right.id < left.id ? -1 : right.id > left.id ? 1 : 0);
+  });
+}
+
+function validDate(value) {
+  if (typeof value !== "string" || !datePattern.test(value)) return false;
+  const [day, month, year] = value.split("/").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
+
 export async function readState(db: Db = prisma) {
   const [materials, materialProfiles, receipts, issues, orders, suppliers, supplierCategories, supplierProfiles, supplierProducts, docDetails, orderDetails, customers, ledger, counts] = await Promise.all([
     db.material.findMany({ orderBy: { code: "asc" } }),
     db.materialProfile.findMany(),
-    db.receipt.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
-    db.issue.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
-    db.order.findMany({ orderBy: [{ signedDate: "desc" }, { id: "desc" }] }),
+    db.receipt.findMany(),
+    db.issue.findMany(),
+    db.order.findMany(),
     db.supplier.findMany({ orderBy: { name: "asc" } }),
     db.supplierCategory.findMany({ orderBy: { name: "asc" } }),
     db.supplierProfile.findMany(),
@@ -54,9 +86,9 @@ export async function readState(db: Db = prisma) {
   return {
     materials: materials.map((row) => [row.code, row.name, row.category, row.unit, row.quantity, row.minimum, row.price]),
     material_profiles: Object.fromEntries(materialProfiles.map((row) => [row.code, JSON.parse(row.profileJson)])),
-    receipts: receipts.map((row) => [row.id, row.date, row.party, row.lineCount, row.total]),
-    issues: issues.map((row) => [row.id, row.date, row.party, row.orderId, row.kind, row.lineCount]),
-    orders: orders.map((row) => [row.id, row.customer, row.signedDate, row.product, row.quantity, row.issueCount, row.status]),
+    receipts: newestFirst(receipts, "date").map((row) => [row.id, row.date, row.party, row.lineCount, row.total]),
+    issues: newestFirst(issues, "date").map((row) => [row.id, row.date, row.party, row.orderId, row.kind, row.lineCount]),
+    orders: newestFirst(orders, "signedDate").map((row) => [row.id, row.customer, row.signedDate, row.product, row.quantity, row.issueCount, row.status]),
     suppliers: suppliers.map((row) => row.name),
     supplier_categories: supplierCategories.map((row) => row.name),
     supplier_profiles: Object.fromEntries(supplierProfiles.map((row) => [row.name, JSON.parse(row.profileJson)])),
@@ -90,21 +122,21 @@ function exactKeys(value, keys) {
 }
 
 function badLine(line) {
-  if (!line || typeof line !== "object" || !exactKeys(line, ["code", "qty", "unit_price", "supplier"])) return true;
+  if (!isRecord(line) || !exactKeys(line, ["code", "qty", "unit_price", "supplier"])) return true;
   if (typeof line.code !== "string" || !line.code.trim() || typeof line.supplier !== "string" || line.supplier.length > 160) return true;
   return ["qty", "unit_price"].some((key) => !isNum(line[key]) || line[key] < 0);
 }
 
-export function validateState(data) {
+export function validateState(data: StateJson) {
   const keys = ["materials", "receipts", "issues", "orders", "suppliers", "customers", "ledger"];
-  if (!data || typeof data !== "object" || keys.some((key) => !Array.isArray(data[key]))) {
+  if (!isRecord(data) || keys.some((key) => !Array.isArray(data[key]))) {
     return "Dữ liệu hệ thống không đúng định dạng";
   }
   const counts = data.counts || [];
   if (!Array.isArray(counts) || counts.length > 20000) return "Danh sách phiếu kiểm kê không đúng định dạng";
   const seenCountIds = new Set();
   for (const count of counts) {
-    if (!count || typeof count !== "object" || keysOutside(count, new Set(["id", "date", "note", "created_by", "lines"])).length) {
+    if (!isRecord(count) || keysOutside(count, new Set(["id", "date", "note", "created_by", "lines"])).length) {
       return "Phiếu kiểm kê không đúng định dạng";
     }
     const { id, date, note, created_by: createdBy, lines } = count;
@@ -124,11 +156,11 @@ export function validateState(data) {
     }
   }
 
-  const docDetails = data.doc_details || {};
+  const docDetails: Record<string, StateJson> = data.doc_details || {};
   const validDocIds = new Set([...data.receipts, ...data.issues].filter((row) => Array.isArray(row) && typeof row[0] === "string").map((row) => row[0]));
-  if (typeof docDetails !== "object" || Array.isArray(docDetails) || Object.keys(docDetails).length > 40000) return "Chi tiết chứng từ không đúng định dạng";
+  if (!isRecord(docDetails) || Array.isArray(docDetails) || Object.keys(docDetails).length > 40000) return "Chi tiết chứng từ không đúng định dạng";
   for (const [docId, detail] of Object.entries(docDetails)) {
-    if (!validDocIds.has(docId) || !detail || typeof detail !== "object" || keysOutside(detail, new Set(["note", "created_by", "lines", "history"])).length) return "Chi tiết chứng từ không hợp lệ";
+    if (!validDocIds.has(docId) || !isRecord(detail) || keysOutside(detail, new Set(["note", "created_by", "lines", "history"])).length) return "Chi tiết chứng từ không hợp lệ";
     const note = detail.note || "";
     const createdBy = detail.created_by || "";
     const lines = detail.lines || [];
@@ -138,7 +170,7 @@ export function validateState(data) {
     }
     if (lines.some((line) => badLine(line) || line.qty <= 0)) return "Dòng chi tiết chứng từ không hợp lệ";
     for (const event of history) {
-      if (!event || typeof event !== "object" || keysOutside(event, new Set(["at", "by", "action", "date", "party", "kind", "note", "lines"])).length) return "Lịch sử chỉnh sửa chứng từ không hợp lệ";
+      if (!isRecord(event) || keysOutside(event, new Set(["at", "by", "action", "date", "party", "kind", "note", "lines"])).length) return "Lịch sử chỉnh sửa chứng từ không hợp lệ";
       if (["at", "by", "action", "date", "party", "kind", "note"].some((key) => event[key] !== undefined && (typeof event[key] !== "string" || event[key].length > 2000)) || !Array.isArray(event.lines || [])) {
         return "Lịch sử chỉnh sửa chứng từ không hợp lệ";
       }
@@ -150,22 +182,22 @@ export function validateState(data) {
   if (!Array.isArray(categories) || categories.length > 500 || categories.some((item) => typeof item !== "string" || !item.trim() || item.length > 80) || new Set(categories).size !== categories.length) {
     return "Danh mục loại nhà cung cấp không hợp lệ";
   }
-  const profiles = data.supplier_profiles || {};
-  const products = data.supplier_products || {};
-  if (typeof profiles !== "object" || Array.isArray(profiles) || Object.keys(profiles).length > 1000) return "Hồ sơ nhà cung cấp không đúng định dạng";
-  if (typeof products !== "object" || Array.isArray(products) || Object.keys(products).length > 1000) return "Danh sách sản phẩm nhà cung cấp không đúng định dạng";
-  if (keys.some((key) => data[key].length > 20000)) return "Số dòng vượt giới hạn";
+  const profiles: Record<string, StateJson> = data.supplier_profiles || {};
+  const products: Record<string, StateJson> = data.supplier_products || {};
+  if (!isRecord(profiles) || Array.isArray(profiles) || Object.keys(profiles).length > 1000) return "Hồ sơ nhà cung cấp không đúng định dạng";
+  if (!isRecord(products) || Array.isArray(products) || Object.keys(products).length > 1000) return "Danh sách sản phẩm nhà cung cấp không đúng định dạng";
+  if (keys.some((key) => data[key].length > (key === "ledger" ? 200_000 : 20_000))) return "Số dòng vượt giới hạn";
   if (data.materials.some((row) => !Array.isArray(row) || row.length !== 7 || typeof row[0] !== "string" || !/^[A-Za-z0-9._/-]{1,80}$/.test(row[0]) || row.slice(1, 4).some((value) => typeof value !== "string" || !value.trim()) || row.slice(4).some((value) => !isNum(value) || value < 0))) {
     return "Mỗi nguyên vật liệu cần đúng 7 cột và mã chỉ gồm chữ, số, dấu . _ / -";
   }
   const materialCodes = data.materials.map((row) => row[0]);
   if (new Set(materialCodes).size !== materialCodes.length) return "Mã nguyên vật liệu bị trùng";
   const materialCodeSet = new Set(materialCodes);
-  const materialProfiles = data.material_profiles || {};
+  const materialProfiles: Record<string, StateJson> = data.material_profiles || {};
   const profileKeys = new Set(["photo", "supplier", "spec", "pack", "color", "size_spec", "lead_time", "moq", "customer", "note"]);
-  if (typeof materialProfiles !== "object" || Array.isArray(materialProfiles) || Object.keys(materialProfiles).length > 20000) return "Hồ sơ nguyên vật liệu không đúng định dạng";
+  if (!isRecord(materialProfiles) || Array.isArray(materialProfiles) || Object.keys(materialProfiles).length > 20000) return "Hồ sơ nguyên vật liệu không đúng định dạng";
   for (const [code, profile] of Object.entries(materialProfiles)) {
-    if (!materialCodeSet.has(code) || !profile || typeof profile !== "object" || keysOutside(profile, profileKeys).length) return "Hồ sơ nguyên vật liệu không hợp lệ";
+    if (!materialCodeSet.has(code) || !isRecord(profile) || keysOutside(profile, profileKeys).length) return "Hồ sơ nguyên vật liệu không hợp lệ";
     if (Object.entries(profile).some(([key, value]) => typeof value !== "string" || (key !== "photo" && value.length > 2000))) return "Hồ sơ nguyên vật liệu không hợp lệ";
     if (profile.photo && (profile.photo.length > 43700 || !imagePattern.test(profile.photo))) return "Ảnh nguyên vật liệu cần là JPEG, PNG hoặc WebP và không quá 32 KB";
     if (profile.supplier && !data.suppliers.includes(profile.supplier)) return "Nhà cung cấp trên hồ sơ NVL không có trong danh bạ";
@@ -175,11 +207,11 @@ export function validateState(data) {
     if ((detail.lines || []).some((line) => !materialCodeSet.has(line.code))) return "Dòng chứng từ tham chiếu mã nguyên vật liệu không tồn tại";
   }
 
-  const orderDetails = data.order_details || {};
+  const orderDetails: Record<string, StateJson> = data.order_details || {};
   const orderIds = new Set(data.orders.filter((row) => Array.isArray(row) && typeof row[0] === "string").map((row) => row[0]));
-  if (typeof orderDetails !== "object" || Array.isArray(orderDetails) || Object.keys(orderDetails).length > 20000) return "Định mức đơn hàng không đúng định dạng";
+  if (!isRecord(orderDetails) || Array.isArray(orderDetails) || Object.keys(orderDetails).length > 20000) return "Định mức đơn hàng không đúng định dạng";
   for (const [orderId, detail] of Object.entries(orderDetails)) {
-    if (!orderIds.has(orderId) || !detail || typeof detail !== "object" || keysOutside(detail, new Set(["unit", "extra_pct", "materials", "note", "photo"])).length) return "Chi tiết đơn hàng không hợp lệ";
+    if (!orderIds.has(orderId) || !isRecord(detail) || keysOutside(detail, new Set(["unit", "extra_pct", "materials", "note", "photo"])).length) return "Chi tiết đơn hàng không hợp lệ";
     const extra = detail.extra_pct ?? 0;
     const planned = detail.materials || [];
     if ((detail.unit && typeof detail.unit !== "string") || (detail.unit || "").length > 40 || (detail.note && typeof detail.note !== "string") || (detail.note || "").length > 2000 || !isNum(extra) || extra < 0 || extra > 1000 || !Array.isArray(planned) || planned.length > 1000) {
@@ -204,7 +236,7 @@ export function validateState(data) {
   for (const [supplier, items] of Object.entries(products)) {
     if (!data.suppliers.includes(supplier) || !Array.isArray(items) || items.length > 500) return "Sản phẩm phải thuộc một nhà cung cấp và không vượt 500 dòng";
     for (const product of items) {
-      if (!product || typeof product !== "object" || keysOutside(product, new Set(["id", "name", "unit", "price", "note", "photo"])).length) return "Thông tin sản phẩm nhà cung cấp không hợp lệ";
+      if (!isRecord(product) || keysOutside(product, new Set(["id", "name", "unit", "price", "note", "photo"])).length) return "Thông tin sản phẩm nhà cung cấp không hợp lệ";
       const price = product.price ?? 0;
       if (["id", "name", "unit", "note", "photo"].some((key) => product[key] !== undefined && typeof product[key] !== "string") || !String(product.id || "").trim() || !String(product.name || "").trim() || String(product.id).length > 120 || String(product.name).length > 160 || String(product.unit || "").length > 40 || String(product.note || "").length > 1000 || !isNum(price) || price < 0) {
         return "Thông tin sản phẩm nhà cung cấp không hợp lệ";
@@ -214,7 +246,7 @@ export function validateState(data) {
   }
   const profileFields = new Set(["logo", "short_code", "products", "categories", "phone", "messenger", "address", "source", "currency", "foreign_price", "exchange_rate", "delivery_days", "note"]);
   for (const [name, profile] of Object.entries(profiles)) {
-    if (!data.suppliers.includes(name) || !profile || typeof profile !== "object" || keysOutside(profile, profileFields).length || Object.values(profile).some((value) => typeof value !== "string" || value.length > 1200)) {
+    if (!data.suppliers.includes(name) || !isRecord(profile) || keysOutside(profile, profileFields).length || Object.values(profile).some((value) => typeof value !== "string" || value.length > 1200)) {
       return "Thông tin hồ sơ nhà cung cấp không hợp lệ";
     }
     if (profile.logo && (profile.logo.length > 43700 || !imagePattern.test(profile.logo))) return "Ảnh nhà cung cấp cần là JPEG, PNG hoặc WebP và không quá 32 KB";
@@ -242,7 +274,7 @@ function duplicate(values) {
 
 // Field types and lengths for every table row, so bad input is a 400 here
 // instead of a database error (or a silently truncated value) later.
-function rowError(data) {
+function rowError(data: StateJson) {
   if (data.materials.some((row) => !text(row[1], 200) || !text(row[2], 80) || !text(row[3], 40))) {
     return "Tên NVL tối đa 200 ký tự, nhóm tối đa 80, đơn vị tính tối đa 40";
   }
@@ -254,6 +286,9 @@ function rowError(data) {
     return "Mã phiếu/đơn hàng chỉ gồm chữ, số, dấu . _ / - (tối đa 120 ký tự)";
   }
   if (duplicate([...receiptIds, ...issueIds]) || duplicate(orderIds)) return "Mã phiếu hoặc mã đơn hàng bị trùng";
+  const dates = [...data.receipts.map((row) => row[1]), ...data.issues.map((row) => row[1]), ...data.ledger.map((row) => row[0]), ...(data.counts || []).map((count) => count.date)];
+  const orderDates = data.orders.map((row) => row[2]).filter((value) => value !== "");
+  if ([...dates, ...orderDates].some((value) => !validDate(value))) return "Ngày phải có dạng DD/MM/YYYY hợp lệ";
   if (data.receipts.some((row) => !text(row[1], 20) || !text(row[2], 2000, false) || !Number.isInteger(row[3]) || row[3] < 0 || !isNum(row[4]) || row[4] < 0)) {
     return "Thông tin phiếu nhập không hợp lệ";
   }
@@ -272,7 +307,7 @@ function rowError(data) {
 // "Tồn ban đầu" and "Sửa hồ sơ" adjustments), so each material's stock must
 // equal the sum of its ledger movements, and every movement must belong to an
 // existing material.
-function stockLedgerError(data) {
+function stockLedgerError(data: StateJson) {
   const sums = new Map();
   for (const row of data.ledger) addCount(sums, row[1], row[3]);
   const codes = new Set(data.materials.map((row) => row[0]));
@@ -284,8 +319,8 @@ function stockLedgerError(data) {
   return null;
 }
 
-function orderAllowanceError(data) {
-  const details = data.order_details || {};
+function orderAllowanceError(data: StateJson) {
+  const details: Record<string, StateJson> = data.order_details || {};
   const issueById = new Map(data.issues.filter((row) => Array.isArray(row) && row.length === 6 && typeof row[0] === "string").map((row) => [row[0], row]));
   const issued = new Map();
   for (const event of data.ledger) {
@@ -297,7 +332,7 @@ function orderAllowanceError(data) {
     }
   }
   for (const [orderId, detail] of Object.entries(details)) {
-    const planned = new Map((detail.materials || []).map((line) => [line.code, Number(line.qty)]));
+    const planned = new Map<string, number>((detail.materials || []).map((line) => [line.code, Number(line.qty)]));
     if (!planned.size) continue;
     const multiplier = 1 + Number(detail.extra_pct || 0) / 100;
     for (const [key, quantity] of issued) {
@@ -315,7 +350,7 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function warehouseChangeError(data, old) {
+export function warehouseChangeError(data: StateJson, old: StateJson) {
   if (!sameJson(data.suppliers, old.suppliers) || !sameJson(data.customers, old.customers) || !sameJson(data.supplier_profiles || {}, old.supplier_profiles) || !sameJson(data.supplier_categories || [], old.supplier_categories) || !sameJson(data.supplier_products || {}, old.supplier_products)) {
     return "Nhân viên kho không được sửa danh mục nhà cung cấp hoặc khách hàng";
   }
@@ -325,8 +360,8 @@ export function warehouseChangeError(data, old) {
   const newOrders = data.order_details || {};
   if (Object.entries(old.order_details).some(([id, detail]) => !sameJson(newOrders[id], detail))) return "Nhân viên kho không được sửa hoặc xóa định mức đơn hàng đã lưu";
   if (data.materials.length !== old.materials.length) return "Nhân viên kho không được thêm hoặc xóa mã nguyên vật liệu";
-  const oldByCode = new Map(old.materials.map((row) => [row[0], row]));
-  const newByCode = new Map(data.materials.map((row) => [row[0], row]));
+  const oldByCode = new Map<string, StateJson>(old.materials.map((row) => [row[0], row]));
+  const newByCode = new Map<string, StateJson>(data.materials.map((row) => [row[0], row]));
   if ([...oldByCode.keys()].some((code) => !newByCode.has(code)) || oldByCode.size !== newByCode.size) return "Danh mục nguyên vật liệu đã thay đổi";
 
   function appended(rows, oldRows, key) {
@@ -441,7 +476,7 @@ function whenRows(rows, query) {
   return rows.length ? [query] : [];
 }
 
-async function writeState(tx: Db, data) {
+async function writeState(tx: Db, data: StateJson) {
   const profiles = Object.entries(data.material_profiles || {}).map(([code, profile]) => ({ code, profileJson: JSON.stringify(profile) }));
   const supplierProfiles = Object.entries(data.supplier_profiles || {}).map(([name, profile]) => ({ name, profileJson: JSON.stringify(profile) }));
   const supplierProducts = Object.entries(data.supplier_products || {}).map(([supplier, products]) => ({ supplier, productsJson: JSON.stringify(products) }));
@@ -482,7 +517,7 @@ async function writeState(tx: Db, data) {
 // row, which takes SQLite's write lock before anything is read, so the role and
 // warehouse checks below see exactly the data being replaced. Any throw rolls
 // the whole transaction back, including the version bump.
-export function saveState(data, expected: number, username: string) {
+export function saveState(data: StateJson, expected: number, username: string) {
   return prisma.$transaction(async (tx) => {
     const next = expected + 1;
     const swapped = await tx.appMeta.updateMany({ where: { key: "version", value: String(expected) }, data: { value: String(next) } });

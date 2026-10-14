@@ -1,8 +1,8 @@
+import "./temp-db.js";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { startServer, useTempDatabase } from "./helpers.js";
+import { startServer } from "./helpers.js";
 
-useTempDatabase();
 const { call, close } = await startServer();
 const { prisma } = await import("../config/database.js");
 const { saveState } = await import("../services/state.service.js");

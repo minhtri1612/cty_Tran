@@ -3,6 +3,7 @@ import { changePassword, login, logout, setup, status } from "../controllers/aut
 import { download } from "../controllers/report.controller.js";
 import { show, update } from "../controllers/state.controller.js";
 import { create, destroy, index } from "../controllers/user.controller.js";
+import { prisma } from "../config/database.js";
 import { requireAdmin, requireUser, sameOrigin } from "../middleware/auth.js";
 
 // Express 4 does not catch rejected promises; forward them to the error handler
@@ -15,7 +16,10 @@ function safe(handler: (request: Request, response: Response, next: NextFunction
 
 export const apiRouter = Router();
 
-apiRouter.get("/health", (_request, response) => response.json({ ok: true, database: "sqlite" }));
+apiRouter.get("/health", safe(async (_request, response) => {
+  await prisma.$queryRawUnsafe("SELECT 1");
+  response.json({ ok: true, database: "sqlite" });
+}));
 apiRouter.get("/auth/status", safe(status));
 apiRouter.post("/auth/setup", sameOrigin, safe(setup));
 apiRouter.post("/auth/login", sameOrigin, safe(login));

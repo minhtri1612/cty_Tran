@@ -37,7 +37,10 @@ app.use("/api", (_request, response, next) => {
   response.setHeader("Cache-Control", "no-store");
   next();
 });
-app.use(express.json({ limit: process.env.SCM_BODY_LIMIT || "6mb" }));
+// The whole state is sent on every save: up to 8 MB of images (checked in
+// validateState) plus ledger and documents. Keep Caddy's request_body limit
+// in sync (deploy/Caddyfile).
+app.use(express.json({ limit: process.env.SCM_BODY_LIMIT || "16mb" }));
 app.use("/static", express.static(resolve(root, "static")));
 app.get(["/", "/index.html"], (_request, response) => {
   response.sendFile(resolve(root, "index.html"));

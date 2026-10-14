@@ -23,7 +23,7 @@ function viewDocs(kind) {
           return Number.isNaN(d.valueOf())
             ? ""
             : d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-        })()}"><td class="code">${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td>${incoming ? "" : `<td>${esc(r[3])}</td><td>${esc(r[4])}</td>`}<td>${incoming ? r[3] : r[5]}</td>${incoming ? `<td>${money(r[4])}</td>` : ""}<td>${esc(currentUser)}</td><td><button class="link-button" ${act("showDocDetails", r[0], kind)}>Chi tiết</button></td></tr>`,
+        })()}"><td class="code">${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td>${incoming ? "" : `<td>${esc(r[3])}</td><td>${esc(r[4])}</td>`}<td>${incoming ? r[3] : r[5]}</td>${incoming ? `<td>${money(r[4])}</td>` : ""}<td>${esc(data.doc_details?.[r[0]]?.created_by || "—")}</td><td><button class="link-button" ${act("showDocDetails", r[0], kind)}>Chi tiết</button></td></tr>`,
     )
     .join(
       "",
