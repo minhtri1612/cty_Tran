@@ -42,7 +42,7 @@ export async function startServer() {
     const text = await response.text();
     let json: any = {};
     try { json = text ? JSON.parse(text) : {}; } catch { json = { raw: text }; }
-    return { status: response.status, json, cookie: (response.headers.get("set-cookie") || "").split(";")[0], headers: response.headers };
+    return { status: response.status, json, cookie: (response.headers.get("set-cookie") || "").split(";")[0], headers: response.headers, url: response.url };
   }
   return { call, close: () => new Promise<void>((done) => server.close(() => done())) };
 }

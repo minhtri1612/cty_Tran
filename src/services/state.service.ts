@@ -373,7 +373,14 @@ export function warehouseChangeError(data: StateJson, old: StateJson) {
   }
   const newReceipts = appended(data.receipts, old.receipts, 0);
   const newIssues = appended(data.issues, old.issues, 0);
-  const addedOrders = appended(data.orders, old.orders, 0);
+  // Existing orders may change in exactly two ways, checked field by field
+  // below: issue count (+1 per new linked issue) and status. So only require
+  // that every saved order is still present, in the same order.
+  const oldOrderIds = old.orders.map((row) => row[0]);
+  const keptOrderIds = data.orders.map((row) => row[0]).filter((id) => oldOrderIds.includes(id));
+  const addedOrders = sameJson(keptOrderIds, oldOrderIds) && new Set(data.orders.map((row) => row[0])).size === data.orders.length
+    ? data.orders.filter((row) => !oldOrderIds.includes(row[0]))
+    : null;
   const newCounts = appended(data.counts || [], old.counts, "id");
   if ([newReceipts, newIssues, addedOrders, newCounts].some((rows) => rows === null)) {
     return "Nhân viên kho chỉ được tạo phiếu mới; không được sửa hoặc xóa chứng từ đã lưu";
