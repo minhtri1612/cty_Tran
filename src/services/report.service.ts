@@ -1,5 +1,5 @@
 import { crc32 } from "node:zlib";
-import { all } from "../config/database.js";
+import { prisma } from "../config/database.js";
 
 function columnName(index) {
   let name = "";
@@ -65,11 +65,17 @@ function zipStored(files) {
   return Buffer.concat([...locals, directory, end]);
 }
 
-export function buildReport(db) {
-  const materials = all(db, "SELECT code,name,category,unit,quantity,minimum,price FROM materials ORDER BY code").map((row) => Object.values(row));
-  const receipts = all(db, "SELECT id,date,party,line_count,total FROM receipts ORDER BY date DESC,id DESC").map((row) => Object.values(row));
-  const issues = all(db, "SELECT id,date,party,order_id,kind,line_count FROM issues ORDER BY date DESC,id DESC").map((row) => Object.values(row));
-  const ledger = all(db, "SELECT date,material_code,kind,quantity,reference FROM ledger ORDER BY id DESC").map((row) => Object.values(row));
+export async function buildReport() {
+  const [materialRows, receiptRows, issueRows, ledgerRows] = await Promise.all([
+    prisma.material.findMany({ orderBy: { code: "asc" } }),
+    prisma.receipt.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    prisma.issue.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    prisma.ledger.findMany({ orderBy: { id: "desc" } }),
+  ]);
+  const materials = materialRows.map((row) => [row.code, row.name, row.category, row.unit, row.quantity, row.minimum, row.price]);
+  const receipts = receiptRows.map((row) => [row.id, row.date, row.party, row.lineCount, row.total]);
+  const issues = issueRows.map((row) => [row.id, row.date, row.party, row.orderId, row.kind, row.lineCount]);
+  const ledger = ledgerRows.map((row) => [row.date, row.materialCode, row.kind, row.quantity, row.reference]);
   const names = new Map(materials.map((row) => [row[0], row[1]]));
   const units = new Map(materials.map((row) => [row[0], row[3]]));
   const sheets = [

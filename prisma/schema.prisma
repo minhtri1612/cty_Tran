@@ -1,0 +1,158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  username      String    @id
+  passwordSalt  Bytes     @map("password_salt")
+  passwordHash  Bytes     @map("password_hash")
+  createdAt     Int       @map("created_at")
+  role          String    @default("admin")
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model Session {
+  tokenHash String @id @map("token_hash")
+  username  String
+  expiresAt Int    @map("expires_at")
+  user      User   @relation(fields: [username], references: [username], onDelete: Cascade)
+
+  @@index([expiresAt], map: "sessions_expiry")
+  @@map("sessions")
+}
+
+model Material {
+  code     String @id
+  name     String
+  category String
+  unit     String
+  quantity Float  @default(0)
+  minimum  Float  @default(0)
+  price    Float  @default(0)
+
+  @@map("materials")
+}
+
+model MaterialProfile {
+  code        String @id
+  profileJson String @map("profile_json") @db.LongText
+
+  @@map("material_profiles")
+}
+
+model Receipt {
+  id        String @id
+  date      String
+  party     String
+  lineCount Int    @map("line_count")
+  total     Float  @default(0)
+
+  @@map("receipts")
+}
+
+model Issue {
+  id        String @id
+  date      String
+  party     String
+  orderId   String @map("order_id")
+  kind      String
+  lineCount Int    @map("line_count")
+
+  @@map("issues")
+}
+
+model Order {
+  id         String @id
+  customer   String
+  signedDate String @map("signed_date")
+  product    String
+  quantity   String
+  issueCount String @map("issue_count")
+  status     String
+
+  @@map("orders")
+}
+
+model Supplier {
+  name    String          @id
+  profile SupplierProfile?
+
+  @@map("suppliers")
+}
+
+model SupplierCategory {
+  name String @id
+
+  @@map("supplier_categories")
+}
+
+model SupplierProfile {
+  name        String   @id
+  profileJson String   @map("profile_json") @db.LongText
+  supplier    Supplier @relation(fields: [name], references: [name], onDelete: Cascade)
+
+  @@map("supplier_profiles")
+}
+
+model SupplierProduct {
+  supplier     String @id
+  productsJson String @map("products_json") @db.LongText
+
+  @@map("supplier_products")
+}
+
+model DocumentDetail {
+  id         String @id
+  detailJson String @map("detail_json") @db.LongText
+
+  @@map("document_details")
+}
+
+model OrderDetail {
+  id         String @id
+  detailJson String @map("detail_json") @db.LongText
+
+  @@map("order_details")
+}
+
+model Customer {
+  name String @id
+
+  @@map("customers")
+}
+
+model Ledger {
+  id           Int    @id @default(autoincrement())
+  date         String
+  materialCode String @map("material_code")
+  kind         String
+  quantity     Float
+  reference    String
+
+  @@index([materialCode, date], map: "ledger_material_date")
+  @@map("ledger")
+}
+
+model InventoryCount {
+  id        String @id
+  date      String
+  note      String
+  createdBy String @map("created_by")
+  linesJson String @map("lines_json")
+
+  @@map("inventory_counts")
+}
+
+model AppMeta {
+  key   String @id
+  value String
+
+  @@map("app_meta")
+}

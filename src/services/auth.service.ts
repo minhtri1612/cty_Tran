@@ -1,6 +1,7 @@
 import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { cookieName, pbkdf2Rounds, sessionSeconds } from "../config/constant.js";
-import { db, get, run } from "../config/database.js";
+import { prisma } from "../config/database.js";
 
 const loginFailures = new Map<string, number[]>();
 
@@ -23,34 +24,35 @@ export function readSessionToken(header: string | undefined) {
   return pair ? decodeURIComponent(pair.slice(cookieName.length + 1)) : "";
 }
 
-export function currentUser(cookieHeader: string | undefined) {
+export async function currentUser(cookieHeader: string | undefined) {
   const token = readSessionToken(cookieHeader);
   if (!token) return null;
-  const row = get(db, "SELECT username, expires_at FROM sessions WHERE token_hash=?", tokenHash(token)) as { username: string; expires_at: number } | undefined;
+  const row = await prisma.session.findUnique({ where: { tokenHash: tokenHash(token) } });
   if (!row) return null;
-  if (row.expires_at < Math.floor(Date.now() / 1000)) {
-    run(db, "DELETE FROM sessions WHERE token_hash=?", tokenHash(token));
+  if (row.expiresAt < Math.floor(Date.now() / 1000)) {
+    await prisma.session.delete({ where: { tokenHash: row.tokenHash } });
     return null;
   }
   return row.username;
 }
 
-export function roleOf(username: string) {
-  const row = get(db, "SELECT role FROM users WHERE username=?", username) as { role: string } | undefined;
+export async function roleOf(username: string) {
+  const row = await prisma.user.findUnique({ where: { username } });
   return row?.role || null;
 }
 
-export function startSession(username: string) {
+export async function startSession(username: string) {
   const token = randomBytes(32).toString("base64url");
   const now = Math.floor(Date.now() / 1000);
-  run(db, "DELETE FROM sessions WHERE expires_at < ?", now);
-  run(db, "INSERT INTO sessions VALUES(?,?,?)", tokenHash(token), username, now + sessionSeconds);
+  await prisma.session.deleteMany({ where: { expiresAt: { lt: now } } });
+  await prisma.session.create({ data: { tokenHash: tokenHash(token), username, expiresAt: now + sessionSeconds } });
   return token;
 }
 
-export function endSession(cookieHeader: string | undefined) {
+export async function endSession(cookieHeader: string | undefined) {
   const token = readSessionToken(cookieHeader);
-  if (token) run(db, "DELETE FROM sessions WHERE token_hash=?", tokenHash(token));
+  if (!token) return;
+  await prisma.session.deleteMany({ where: { tokenHash: tokenHash(token) } });
 }
 
 export function tooManyLogins(remote: string) {
@@ -61,9 +63,8 @@ export function tooManyLogins(remote: string) {
 }
 
 export function noteFailedLogin(remote: string) {
-  const now = Math.floor(Date.now() / 1000);
   const recent = loginFailures.get(remote) || [];
-  recent.push(now);
+  recent.push(Math.floor(Date.now() / 1000));
   loginFailures.set(remote, recent);
 }
 
@@ -72,45 +73,40 @@ export function clearFailedLogins(remote: string) {
 }
 
 export function findUser(username: string) {
-  return get(db, "SELECT username,password_salt,password_hash,role FROM users WHERE username=?", username) as { username: string; password_salt: Uint8Array; password_hash: Uint8Array; role: string } | undefined;
+  return prisma.user.findUnique({ where: { username } });
 }
 
-export function userExists() {
-  return Boolean(get(db, "SELECT 1 AS ok FROM users LIMIT 1"));
+export async function userExists() {
+  const row = await prisma.user.findFirst({ select: { username: true } });
+  return Boolean(row);
 }
 
-export function insertUser(username: string, password: string, role: string) {
+export async function insertUser(username: string, password: string, role: string) {
   const salt = randomBytes(16);
-  run(db, "INSERT INTO users(username,password_salt,password_hash,created_at,role) VALUES(?,?,?,?,?)", username, salt, passwordHash(password, salt), Math.floor(Date.now() / 1000), role);
+  await prisma.user.create({
+    data: { username, passwordSalt: salt, passwordHash: passwordHash(password, salt), createdAt: Math.floor(Date.now() / 1000), role },
+  });
 }
 
 export function listUsers() {
-  return db.prepare("SELECT username,role,created_at FROM users ORDER BY username").all() as { username: string; role: string; created_at: number }[];
+  return prisma.user.findMany({ orderBy: { username: "asc" }, select: { username: true, role: true, createdAt: true } });
 }
 
-export function updatePassword(username: string, password: string) {
+export async function updatePassword(username: string, password: string) {
   const salt = randomBytes(16);
-  run(db, "UPDATE users SET password_salt=?,password_hash=? WHERE username=?", salt, passwordHash(password, salt), username);
-  run(db, "DELETE FROM sessions WHERE username=?", username);
+  await prisma.user.update({ where: { username }, data: { passwordSalt: salt, passwordHash: passwordHash(password, salt) } });
+  await prisma.session.deleteMany({ where: { username } });
 }
 
-export function removeUser(username: string) {
-  const target = get(db, "SELECT role FROM users WHERE username=?", username) as { role: string } | undefined;
+export async function removeUser(username: string) {
+  const target = await prisma.user.findUnique({ where: { username } });
   if (!target) return "missing" as const;
-  const admins = get(db, "SELECT COUNT(*) AS n FROM users WHERE role='admin'") as { n: number };
-  if (target.role === "admin" && admins.n <= 1) return "last-admin" as const;
-  run(db, "DELETE FROM users WHERE username=?", username);
+  const admins = await prisma.user.count({ where: { role: "admin" } });
+  if (target.role === "admin" && admins <= 1) return "last-admin" as const;
+  await prisma.user.delete({ where: { username } });
   return "ok" as const;
 }
 
-export function begin() {
-  db.exec("BEGIN IMMEDIATE");
-}
-
-export function commit() {
-  db.exec("COMMIT");
-}
-
-export function rollback() {
-  db.exec("ROLLBACK");
+export function isUniqueError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }

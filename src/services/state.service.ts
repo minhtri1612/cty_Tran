@@ -1,4 +1,4 @@
-import { all, get, run } from "../config/database.js";
+import { prisma } from "../config/database.js";
 
 const imagePattern = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
 
@@ -22,40 +22,44 @@ function addCount(map, key, amount = 1) {
   map.set(key, (map.get(key) || 0) + amount);
 }
 
-function listRows(db, sql) {
-  return all(db, sql).map((row) => Object.values(row));
-}
-
-function jsonMap(db, sql) {
-  return Object.fromEntries(all(db, sql).map((row) => {
-    const [key, value] = Object.values(row);
-    return [key, JSON.parse(value)];
-  }));
-}
-
-export function readState(db) {
+export async function readState() {
+  const [materials, materialProfiles, receipts, issues, orders, suppliers, supplierCategories, supplierProfiles, supplierProducts, docDetails, orderDetails, customers, ledger, counts] = await Promise.all([
+    prisma.material.findMany({ orderBy: { code: "asc" } }),
+    prisma.materialProfile.findMany(),
+    prisma.receipt.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    prisma.issue.findMany({ orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    prisma.order.findMany({ orderBy: [{ signedDate: "desc" }, { id: "desc" }] }),
+    prisma.supplier.findMany({ orderBy: { name: "asc" } }),
+    prisma.supplierCategory.findMany({ orderBy: { name: "asc" } }),
+    prisma.supplierProfile.findMany(),
+    prisma.supplierProduct.findMany(),
+    prisma.documentDetail.findMany(),
+    prisma.orderDetail.findMany(),
+    prisma.customer.findMany({ orderBy: { name: "asc" } }),
+    prisma.ledger.findMany({ orderBy: { id: "desc" } }),
+    prisma.inventoryCount.findMany({ orderBy: { id: "desc" } }),
+  ]);
   return {
-    materials: listRows(db, "SELECT code,name,category,unit,quantity,minimum,price FROM materials ORDER BY code"),
-    material_profiles: jsonMap(db, "SELECT code,profile_json FROM material_profiles"),
-    receipts: listRows(db, "SELECT id,date,party,line_count,total FROM receipts ORDER BY date DESC,id DESC"),
-    issues: listRows(db, "SELECT id,date,party,order_id,kind,line_count FROM issues ORDER BY date DESC,id DESC"),
-    orders: listRows(db, "SELECT id,customer,signed_date,product,quantity,issue_count,status FROM orders ORDER BY signed_date DESC,id DESC"),
-    suppliers: all(db, "SELECT name FROM suppliers ORDER BY name").map((row) => row.name),
-    supplier_categories: all(db, "SELECT name FROM supplier_categories ORDER BY name").map((row) => row.name),
-    supplier_profiles: jsonMap(db, "SELECT name,profile_json FROM supplier_profiles"),
-    supplier_products: jsonMap(db, "SELECT supplier,products_json FROM supplier_products"),
-    doc_details: jsonMap(db, "SELECT id,detail_json FROM document_details"),
-    order_details: jsonMap(db, "SELECT id,detail_json FROM order_details"),
-    customers: all(db, "SELECT name FROM customers ORDER BY name").map((row) => row.name),
-    ledger: listRows(db, "SELECT date,material_code,kind,quantity,reference FROM ledger ORDER BY id DESC"),
-    counts: all(db, "SELECT id,date,note,created_by,lines_json FROM inventory_counts ORDER BY id DESC").map((row) => ({
-      id: row.id, date: row.date, note: row.note, created_by: row.created_by, lines: JSON.parse(row.lines_json),
-    })),
+    materials: materials.map((row) => [row.code, row.name, row.category, row.unit, row.quantity, row.minimum, row.price]),
+    material_profiles: Object.fromEntries(materialProfiles.map((row) => [row.code, JSON.parse(row.profileJson)])),
+    receipts: receipts.map((row) => [row.id, row.date, row.party, row.lineCount, row.total]),
+    issues: issues.map((row) => [row.id, row.date, row.party, row.orderId, row.kind, row.lineCount]),
+    orders: orders.map((row) => [row.id, row.customer, row.signedDate, row.product, row.quantity, row.issueCount, row.status]),
+    suppliers: suppliers.map((row) => row.name),
+    supplier_categories: supplierCategories.map((row) => row.name),
+    supplier_profiles: Object.fromEntries(supplierProfiles.map((row) => [row.name, JSON.parse(row.profileJson)])),
+    supplier_products: Object.fromEntries(supplierProducts.map((row) => [row.supplier, JSON.parse(row.productsJson)])),
+    doc_details: Object.fromEntries(docDetails.map((row) => [row.id, JSON.parse(row.detailJson)])),
+    order_details: Object.fromEntries(orderDetails.map((row) => [row.id, JSON.parse(row.detailJson)])),
+    customers: customers.map((row) => row.name),
+    ledger: ledger.map((row) => [row.date, row.materialCode, row.kind, row.quantity, row.reference]),
+    counts: counts.map((row) => ({ id: row.id, date: row.date, note: row.note, created_by: row.createdBy, lines: JSON.parse(row.linesJson) })),
   };
 }
 
-export function stateVersion(db) {
-  return Number(get(db, "SELECT value FROM app_meta WHERE key='version'").value);
+export async function stateVersion() {
+  const row = await prisma.appMeta.findUnique({ where: { key: "version" } });
+  return Number(row?.value || 0);
 }
 
 function keysOutside(value, allowed) {
@@ -144,7 +148,7 @@ export function validateState(data) {
   if (typeof materialProfiles !== "object" || Array.isArray(materialProfiles) || Object.keys(materialProfiles).length > 20000) return "Hồ sơ nguyên vật liệu không đúng định dạng";
   for (const [code, profile] of Object.entries(materialProfiles)) {
     if (!materialCodeSet.has(code) || !profile || typeof profile !== "object" || keysOutside(profile, profileKeys).length) return "Hồ sơ nguyên vật liệu không hợp lệ";
-    if (Object.values(profile).some((value) => typeof value !== "string" || value.length > 2000)) return "Hồ sơ nguyên vật liệu không hợp lệ";
+    if (Object.entries(profile).some(([key, value]) => typeof value !== "string" || (key !== "photo" && value.length > 2000))) return "Hồ sơ nguyên vật liệu không hợp lệ";
     if (profile.photo && (profile.photo.length > 43700 || !imagePattern.test(profile.photo))) return "Ảnh nguyên vật liệu cần là JPEG, PNG hoặc WebP và không quá 32 KB";
     if (profile.supplier && !data.suppliers.includes(profile.supplier)) return "Nhà cung cấp trên hồ sơ NVL không có trong danh bạ";
     if (profile.customer && !data.customers.includes(profile.customer)) return "Khách hàng trên hồ sơ NVL không có trong danh bạ";
@@ -239,8 +243,8 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function warehouseChangeError(db, data) {
-  const old = readState(db);
+export async function warehouseChangeError(data) {
+  const old = await readState();
   if (!sameJson(data.suppliers, old.suppliers) || !sameJson(data.customers, old.customers) || !sameJson(data.supplier_profiles || {}, old.supplier_profiles) || !sameJson(data.supplier_categories || [], old.supplier_categories) || !sameJson(data.supplier_products || {}, old.supplier_products)) {
     return "Nhân viên kho không được sửa danh mục nhà cung cấp hoặc khách hàng";
   }
@@ -362,22 +366,47 @@ export function warehouseChangeError(db, data) {
   return null;
 }
 
-export function writeState(db, data) {
-  const tables = ["materials", "material_profiles", "receipts", "issues", "orders", "supplier_products", "supplier_profiles", "document_details", "order_details", "supplier_categories", "suppliers", "customers", "ledger", "inventory_counts"];
-  for (const table of tables) run(db, `DELETE FROM ${table}`);
-  const insert = db.prepare.bind(db);
-  for (const row of data.materials) insert("INSERT INTO materials VALUES(?,?,?,?,?,?,?)").run(...row);
-  for (const [code, profile] of Object.entries(data.material_profiles || {})) insert("INSERT INTO material_profiles(code,profile_json) VALUES(?,?)").run(code, JSON.stringify(profile));
-  for (const row of data.receipts) insert("INSERT INTO receipts VALUES(?,?,?,?,?)").run(...row);
-  for (const row of data.issues) insert("INSERT INTO issues VALUES(?,?,?,?,?,?)").run(...row);
-  for (const row of data.orders) insert("INSERT INTO orders VALUES(?,?,?,?,?,?,?)").run(...row);
-  for (const name of data.suppliers) insert("INSERT INTO suppliers VALUES(?)").run(name);
-  for (const name of data.supplier_categories || []) insert("INSERT INTO supplier_categories VALUES(?)").run(name);
-  for (const [name, profile] of Object.entries(data.supplier_profiles || {})) insert("INSERT INTO supplier_profiles(name,profile_json) VALUES(?,?)").run(name, JSON.stringify(profile));
-  for (const [name, products] of Object.entries(data.supplier_products || {})) insert("INSERT INTO supplier_products(supplier,products_json) VALUES(?,?)").run(name, JSON.stringify(products));
-  for (const [id, detail] of Object.entries(data.doc_details || {})) insert("INSERT INTO document_details(id,detail_json) VALUES(?,?)").run(id, JSON.stringify(detail));
-  for (const [id, detail] of Object.entries(data.order_details || {})) insert("INSERT INTO order_details(id,detail_json) VALUES(?,?)").run(id, JSON.stringify(detail));
-  for (const name of data.customers) insert("INSERT INTO customers VALUES(?)").run(name);
-  for (const row of [...data.ledger].reverse()) insert("INSERT INTO ledger(date,material_code,kind,quantity,reference) VALUES(?,?,?,?,?)").run(...row);
-  for (const count of [...(data.counts || [])].reverse()) insert("INSERT INTO inventory_counts(id,date,note,created_by,lines_json) VALUES(?,?,?,?,?)").run(count.id, count.date, count.note, count.created_by, JSON.stringify(count.lines));
+function whenRows(rows, query) {
+  return rows.length ? [query] : [];
+}
+
+export async function replaceState(data) {
+  const current = await stateVersion();
+  const profiles = Object.entries(data.material_profiles || {}).map(([code, profile]) => ({ code, profileJson: JSON.stringify(profile) }));
+  const supplierProfiles = Object.entries(data.supplier_profiles || {}).map(([name, profile]) => ({ name, profileJson: JSON.stringify(profile) }));
+  const supplierProducts = Object.entries(data.supplier_products || {}).map(([supplier, products]) => ({ supplier, productsJson: JSON.stringify(products) }));
+  const documents = Object.entries(data.doc_details || {}).map(([id, detail]) => ({ id, detailJson: JSON.stringify(detail) }));
+  const orderDetails = Object.entries(data.order_details || {}).map(([id, detail]) => ({ id, detailJson: JSON.stringify(detail) }));
+  await prisma.$transaction([
+    prisma.materialProfile.deleteMany(),
+    prisma.supplierProfile.deleteMany(),
+    prisma.supplierProduct.deleteMany(),
+    prisma.documentDetail.deleteMany(),
+    prisma.orderDetail.deleteMany(),
+    prisma.material.deleteMany(),
+    prisma.receipt.deleteMany(),
+    prisma.issue.deleteMany(),
+    prisma.order.deleteMany(),
+    prisma.supplierCategory.deleteMany(),
+    prisma.supplier.deleteMany(),
+    prisma.customer.deleteMany(),
+    prisma.ledger.deleteMany(),
+    prisma.inventoryCount.deleteMany(),
+    ...whenRows(data.materials, prisma.material.createMany({ data: data.materials.map((row) => ({ code: row[0], name: row[1], category: row[2], unit: row[3], quantity: row[4], minimum: row[5], price: row[6] })) })),
+    ...whenRows(profiles, prisma.materialProfile.createMany({ data: profiles })),
+    ...whenRows(data.receipts, prisma.receipt.createMany({ data: data.receipts.map((row) => ({ id: row[0], date: row[1], party: row[2], lineCount: row[3], total: row[4] })) })),
+    ...whenRows(data.issues, prisma.issue.createMany({ data: data.issues.map((row) => ({ id: row[0], date: row[1], party: row[2], orderId: row[3], kind: row[4], lineCount: row[5] })) })),
+    ...whenRows(data.orders, prisma.order.createMany({ data: data.orders.map((row) => ({ id: row[0], customer: row[1], signedDate: row[2], product: row[3], quantity: row[4], issueCount: row[5], status: row[6] })) })),
+    ...whenRows(data.suppliers, prisma.supplier.createMany({ data: data.suppliers.map((name) => ({ name })) })),
+    ...whenRows(data.supplier_categories || [], prisma.supplierCategory.createMany({ data: data.supplier_categories.map((name) => ({ name })) })),
+    ...whenRows(supplierProfiles, prisma.supplierProfile.createMany({ data: supplierProfiles })),
+    ...whenRows(supplierProducts, prisma.supplierProduct.createMany({ data: supplierProducts })),
+    ...whenRows(documents, prisma.documentDetail.createMany({ data: documents })),
+    ...whenRows(orderDetails, prisma.orderDetail.createMany({ data: orderDetails })),
+    ...whenRows(data.customers, prisma.customer.createMany({ data: data.customers.map((name) => ({ name })) })),
+    ...whenRows(data.ledger, prisma.ledger.createMany({ data: [...data.ledger].reverse().map((row) => ({ date: row[0], materialCode: row[1], kind: row[2], quantity: row[3], reference: row[4] })) })),
+    ...whenRows(data.counts || [], prisma.inventoryCount.createMany({ data: [...data.counts].reverse().map((count) => ({ id: count.id, date: count.date, note: count.note, createdBy: count.created_by, linesJson: JSON.stringify(count.lines) })) })),
+    prisma.appMeta.upsert({ where: { key: "version" }, create: { key: "version", value: String(current + 1) }, update: { value: String(current + 1) } }),
+  ]);
+  return current + 1;
 }

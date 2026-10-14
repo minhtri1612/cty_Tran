@@ -1,0 +1,27 @@
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: hoang_nhat
+      MYSQL_USER: scm
+      MYSQL_PASSWORD: scm
+    ports:
+      - "3306:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uscm", "-pscm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    ports:
+      - "4173:4173"
+    environment:
+      DATABASE_URL: mysql://scm:scm@mysql:3306/hoang_nhat
+      PORT: "4173"
+    depends_on:
+      mysql:
+        condition: service_healthy

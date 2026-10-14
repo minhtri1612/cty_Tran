@@ -3,15 +3,20 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "tsc",
     "start": "tsx src/server.ts",
-    "test": "tsx --test src/__tests__/auth.test.ts"
+    "test": "tsx --test src/__tests__/auth.test.ts",
+    "db:push": "prisma db push"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "@prisma/client": "^6.16.2",
+    "express": "^4.21.2",
+    "prisma": "^6.16.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.15.3",
-    "tsx": "^4.20.3"
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { execSync } from "node:child_process";
 import test from "node:test";
 
-process.env.SCM_DB_PATH = join(mkdtempSync(join(tmpdir(), "scm-")), "test.sqlite3");
+process.env.DATABASE_URL = "mysql://root:root@127.0.0.1:3306/hoang_nhat_test";
 delete process.env.SETUP_TOKEN;
+execSync("npx prisma db push --skip-generate --accept-data-loss", { stdio: "inherit", env: process.env });
 
 const { app } = await import("../app.js");
 
