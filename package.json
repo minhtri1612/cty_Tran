@@ -3,15 +3,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/server.ts",
-    "test": "tsx --test src/__tests__/auth.test.ts"
+    "build": "prisma generate && tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit --noCheck false",
+    "test": "tsx --test --test-timeout=60000 src/__tests__/*.test.ts",
+    "db:migrate": "node scripts/prisma.mjs migrate deploy",
+    "db:status": "node scripts/prisma.mjs migrate status"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "@prisma/client": "^6.16.2",
+    "express": "^4.21.2",
+    "prisma": "^6.16.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.15.3",
-    "tsx": "^4.20.3"
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.3"
   }
 }

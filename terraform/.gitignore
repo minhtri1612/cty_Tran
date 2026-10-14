@@ -1,0 +1,20 @@
+# Provider plugins / cache
+**/.terraform/*
+
+# State (bootstrap uses local state — back it up, never commit it)
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Real variable files (may contain account ids, IPs). Only *.example is committed.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Keep .terraform.lock.hcl committed (pins provider versions).

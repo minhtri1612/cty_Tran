@@ -1,33 +1,28 @@
 import type { Request, Response } from "express";
-import { begin, commit, roleOf, rollback } from "../services/auth.service.js";
-import { readState, stateVersion, warehouseChangeError, writeState } from "../services/state.service.js";
+import { roleOf } from "../services/auth.service.js";
+import { readSnapshot, SaveForbiddenError, saveState, StaleVersionError } from "../services/state.service.js";
 import { validateState } from "../validation/state.schema.js";
-import { run, db } from "../config/database.js";
 
-export function show(_request: Request, response: Response) {
+export async function show(_request: Request, response: Response) {
   const username = response.locals.username as string;
-  response.json({ data: readState(db), username, role: roleOf(username), version: stateVersion(db) });
+  const { data, version } = await readSnapshot();
+  response.json({ data, username, role: await roleOf(username), version });
 }
 
-export function update(request: Request, response: Response) {
+export async function update(request: Request, response: Response) {
+  const expected = request.body?.version;
+  if (!Number.isSafeInteger(expected) || expected < 0) return response.status(400).json({ error: "Thiếu phiên bản dữ liệu hợp lệ" });
   const error = validateState(request.body.data);
   if (error) return response.status(400).json({ error });
-  begin();
-  const username = response.locals.username as string;
-  const current = stateVersion(db);
-  if (request.body.version !== current) {
-    rollback();
-    return response.status(409).json({ error: "Dữ liệu vừa được người khác cập nhật. Hãy tải lại trang trước khi lưu.", version: current });
-  }
-  if (roleOf(username) !== "admin") {
-    const blocked = warehouseChangeError(db, request.body.data);
-    if (blocked) {
-      rollback();
-      return response.status(403).json({ error: blocked });
+  try {
+    const version = await saveState(request.body.data, expected, response.locals.username as string);
+    response.json({ ok: true, version });
+  } catch (failure) {
+    if (failure instanceof StaleVersionError) {
+      return response.status(409).json({ error: "Dữ liệu vừa được người khác cập nhật. Hãy tải lại trang trước khi lưu.", version: failure.current });
     }
+    if (failure instanceof SaveForbiddenError) return response.status(403).json({ error: failure.message });
+    console.error("PUT /api/state failed:", failure instanceof Error ? failure.message : failure);
+    response.status(500).json({ error: "Không lưu được dữ liệu. Thay đổi chưa được ghi." });
   }
-  writeState(db, request.body.data);
-  run(db, "UPDATE app_meta SET value=? WHERE key='version'", String(current + 1));
-  commit();
-  response.json({ ok: true, version: current + 1 });
 }

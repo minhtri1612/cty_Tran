@@ -1,0 +1,33 @@
+#!/bin/bash
+# Chạy MỘT lần khi tạo máy. Chuẩn bị Docker và ổ dữ liệu; không deploy app,
+# không chạy migration.
+set -euo pipefail
+exec > >(tee -a /var/log/hoang-nhat-bootstrap.log) 2>&1
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y ca-certificates curl git
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker
+snap install aws-cli --classic
+
+# Ổ EBS dữ liệu: tìm theo volume id (tên thiết bị NVMe không cố định).
+device="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${replace(data_volume_id, "-", "")}"
+for _ in $(seq 1 60); do [ -e "$device" ] && break; sleep 5; done
+[ -e "$device" ] || { echo "data volume ${data_volume_id} not attached" >&2; exit 1; }
+
+# Chỉ format khi ổ CHƯA có filesystem — không bao giờ format lại ổ đã có dữ liệu.
+if ! blkid "$device" >/dev/null 2>&1; then
+  mkfs.ext4 -L hn-data "$device"
+fi
+mkdir -p /srv/hoang-nhat/data /srv/hoang-nhat/app
+uuid=$(blkid -s UUID -o value "$device")
+grep -q "$uuid" /etc/fstab || echo "UUID=$uuid /srv/hoang-nhat/data ext4 defaults,nofail 0 2" >> /etc/fstab
+mount -a
+chown 1000:1000 /srv/hoang-nhat/data
+chmod 750 /srv/hoang-nhat/data
+echo "bootstrap done"

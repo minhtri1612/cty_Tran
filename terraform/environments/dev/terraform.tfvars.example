@@ -1,0 +1,15 @@
+# Copy thành terraform.tfvars (không commit). Không đặt secret ở đây.
+aws_region          = "ap-southeast-1"
+instance_type       = "t4g.micro"
+domain_name         = "kho-dev.example.com"
+route53_zone_id     = null
+vpc_cidr            = "10.10.0.0/16"
+public_subnet_cidr  = "10.10.1.0/24"
+ecr_repository_name = "hoang-nhat-scm-dev"
+backup_bucket_name  = "hoang-nhat-scm-backup-dev-123456789012"
+
+# Có thể giới hạn dev về IP văn phòng:
+# allowed_http_cidrs = ["203.0.113.10/32"]
+
+termination_protection = false
+enable_ebs_snapshots   = false

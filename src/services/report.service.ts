@@ -1,5 +1,6 @@
 import { crc32 } from "node:zlib";
-import { all } from "../config/database.js";
+import { prisma } from "../config/database.js";
+import { newestFirst } from "./state.service.js";
 
 function columnName(index) {
   let name = "";
@@ -65,15 +66,21 @@ function zipStored(files) {
   return Buffer.concat([...locals, directory, end]);
 }
 
-export function buildReport(db) {
-  const materials = all(db, "SELECT code,name,category,unit,quantity,minimum,price FROM materials ORDER BY code").map((row) => Object.values(row));
-  const receipts = all(db, "SELECT id,date,party,line_count,total FROM receipts ORDER BY date DESC,id DESC").map((row) => Object.values(row));
-  const issues = all(db, "SELECT id,date,party,order_id,kind,line_count FROM issues ORDER BY date DESC,id DESC").map((row) => Object.values(row));
-  const ledger = all(db, "SELECT date,material_code,kind,quantity,reference FROM ledger ORDER BY id DESC").map((row) => Object.values(row));
+export async function buildReport() {
+  const [materialRows, receiptRows, issueRows, ledgerRows] = await prisma.$transaction(async (tx) => Promise.all([
+    tx.material.findMany({ orderBy: { code: "asc" } }),
+    tx.receipt.findMany(),
+    tx.issue.findMany(),
+    tx.ledger.findMany({ orderBy: { id: "desc" } }),
+  ]));
+  const materials = materialRows.map((row) => [row.code, row.name, row.category, row.unit, row.quantity, row.minimum, row.price]);
+  const receipts = newestFirst(receiptRows, "date").map((row) => [row.id, row.date, row.party, row.lineCount, row.total]);
+  const issues = newestFirst(issueRows, "date").map((row) => [row.id, row.date, row.party, row.orderId, row.kind, row.lineCount]);
+  const ledger = ledgerRows.map((row) => [row.date, row.materialCode, row.kind, row.quantity, row.reference]);
   const names = new Map(materials.map((row) => [row[0], row[1]]));
   const units = new Map(materials.map((row) => [row[0], row[3]]));
   const sheets = [
-    ["Nguyên vật liệu", [["Mã NVL", "Tên nguyên vật liệu", "Nhóm", "ĐVT", "Tồn hiện tại", "Tồn tối thiểu", "Đơn giá gần nhất (₫)", "Giá trị tồn (₫)"], ...materials.map((row) => [...row, row[4] * row[6]])]],
+    ["Nguyên vật liệu", [["Mã NVL", "Tên nguyên vật liệu", "Nhóm", "ĐVT", "Tồn hiện tại", "Tồn tối thiểu", "Đơn giá gần nhất (₫)", "Giá trị tồn (₫)"], ...materialRows.map((row) => [row.code, row.name, row.category, row.unit, row.quantity, row.minimum, row.price, row.quantity * row.price])]],
     ["Phiếu nhập", [["Mã phiếu", "Ngày", "Nhà cung cấp", "Số dòng", "Tổng tiền (₫)"], ...receipts]],
     ["Phiếu xuất", [["Mã phiếu", "Ngày", "Khách hàng", "Đơn hàng", "Loại xuất", "Số dòng"], ...issues]],
     ["Sổ kho", [["Ngày", "Mã NVL", "Tên NVL", "Loại", "Số lượng", "ĐVT", "Tham chiếu"], ...ledger.map((row) => [row[0], row[1], names.get(row[1]) || "NVL đã xóa", row[2], row[3], units.get(row[1]) || "", row[4]])]],

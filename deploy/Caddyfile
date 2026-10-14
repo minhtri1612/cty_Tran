@@ -1,0 +1,25 @@
+# HTTPS certificates are obtained automatically for {$SCM_DOMAIN} (DNS must
+# point at this server and ports 80/443 must be open). With SCM_DOMAIN=localhost
+# Caddy uses its internal CA instead (local testing only).
+{$SCM_DOMAIN} {
+	encode zstd gzip
+
+	# Keep in sync with the app's SCM_BODY_LIMIT (16 MB) — whole-state saves.
+	request_body {
+		max_size 17MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	# Caddy passes the original Host header through and appends the client IP
+	# to X-Forwarded-For; the app trusts exactly one proxy (TRUST_PROXY=1).
+	reverse_proxy app:4173
+
+	log {
+		output stdout
+		format console
+	}
+}
